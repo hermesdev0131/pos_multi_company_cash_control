@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_pos_cash_company_rule_tree" model="ir.ui.view">
+        <field name="name">pos.cash.company.rule.tree</field>
+        <field name="model">pos.cash.company.rule</field>
+        <field name="arch" type="xml">
+            <tree string="POS Cash Company Rules">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="active" widget="boolean_toggle"/>
+                <!-- Placeholder fields to be added later:
+                <field name="fiscal_company_id"/>
+                <field name="non_fiscal_company_id"/>
+                <field name="target_percentage"/>
+                <field name="pos_config_id"/>
+                -->
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_pos_cash_company_rule_form" model="ir.ui.view">
+        <field name="name">pos.cash.company.rule.form</field>
+        <field name="model">pos.cash.company.rule</field>
+        <field name="arch" type="xml">
+            <form string="POS Cash Company Rule">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="toggle_active" type="object" 
+                                class="oe_stat_button" icon="fa-archive"
+                                attrs="{'invisible': [('active', '=', False)]}"/>
+                        <button name="toggle_active" type="object" 
+                                class="oe_stat_button" icon="fa-archive"
+                                attrs="{'invisible': [('active', '=', True)]}"/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="name" placeholder="e.g., Default Cash Routing Rule"/>
+                            <field name="sequence" widget="handle"/>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Configuration" name="configuration">
+                            <group>
+                                <!-- Placeholder fields to be added later:
+                                <field name="pos_config_id" 
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
+                                <field name="fiscal_company_id" 
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
+                                <field name="non_fiscal_company_id" 
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
+                                <field name="target_percentage"/>
+                                -->
+                            </group>
+                        </page>
+                        <page string="Payment Methods" name="payment_methods">
+                            <group>
+                                <!-- Placeholder field to be added later:
+                                <field name="cash_payment_method_ids" widget="many2many_tags"/>
+                                -->
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_pos_cash_company_rule_search" model="ir.ui.view">
+        <field name="name">pos.cash.company.rule.search</field>
+        <field name="model">pos.cash.company.rule</field>
+        <field name="arch" type="xml">
+            <search string="POS Cash Company Rules">
+                <field name="name" string="Rule Name"/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Active" name="group_active" context="{'group_by': 'active'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pos_cash_company_rule" model="ir.actions.act_window">
+        <field name="name">POS Cash Company Rules</field>
+        <field name="res_model">pos.cash.company.rule</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first cash routing rule
+            </p>
+            <p>
+                Define rules to route cash payments to fiscal or non-fiscal companies
+                based on configurable criteria.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_pos_cash_company_rule"
+              name="Cash Company Rules"
+              parent="point_of_sale.menu_point_of_sale"
+              action="action_pos_cash_company_rule"
+              sequence="100"/>
+</odoo>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    <!-- Extension of POS receipt template for multi-company cash control -->
+    
+    <!-- 
+    TODO: Extend the receipt template to conditionally render:
+    - Non-fiscal company QR code when payment is routed to non-fiscal company
+    - Fiscal company information when payment is routed to fiscal company
+    - Company-specific branding and legal information
+    
+    Example structure:
+    <t t-inherit="point_of_sale.OrderReceipt" t-inherit-mode="extension" owl="1">
+        <xpath expr="//div[@class='receipt-order']" position="after">
+            <t t-if="order.is_non_fiscal_company">
+                <div class="non-fiscal-qr-code">
+                    <!-- QR code for non-fiscal company -->
+                </div>
+            </t>
+        </xpath>
+    </t>
+    -->
+</templates>
