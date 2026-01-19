@@ -27,10 +27,10 @@
                     <div class="oe_button_box" name="button_box">
                         <button name="toggle_active" type="object" 
                                 class="oe_stat_button" icon="fa-archive"
-                                attrs="{'invisible': [('active', '=', False)]}"/>
+                                invisible="not active"/>
                         <button name="toggle_active" type="object" 
                                 class="oe_stat_button" icon="fa-archive"
-                                attrs="{'invisible': [('active', '=', True)]}"/>
+                                invisible="active"/>
                     </div>
                     <group>
                         <group>
