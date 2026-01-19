@@ -11,7 +11,61 @@
                 <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4">
                     <group>
                         <field name="cash_company_rule_ids" 
-                               context="{'default_pos_config_id': id}"/>
+                               context="{'default_pos_config_id': id}"
+                               nolabel="1">
+                            <list decoration-muted="not active" 
+                                  default_order="sequence"
+                                  editable="bottom">
+                                <field name="sequence" widget="handle" column_invisible="1"/>
+                                <field name="name" required="1"/>
+                                <field name="fiscal_company_id" 
+                                       options="{'no_create': True, 'no_create_edit': True}"
+                                       required="1"/>
+                                <field name="non_fiscal_company_id" 
+                                       options="{'no_create': True, 'no_create_edit': True}"
+                                       required="1"/>
+                                <field name="target_non_fiscal_percentage" 
+                                       widget="percentage"
+                                       required="1"/>
+                                <field name="active" widget="boolean_toggle" 
+                                       column_invisible="1"/>
+                            </list>
+                            <form>
+                                <sheet>
+                                    <group>
+                                        <group string="General Information">
+                                            <field name="name" required="1"/>
+                                            <field name="pos_config_id" 
+                                                   options="{'no_create': True, 'no_create_edit': True}" 
+                                                   invisible="1"/>
+                                            <field name="sequence" widget="handle"/>
+                                            <field name="active"/>
+                                        </group>
+                                        <group string="Company Selection">
+                                            <field name="fiscal_company_id" 
+                                                   options="{'no_create': True, 'no_create_edit': True}"
+                                                   required="1"/>
+                                            <field name="non_fiscal_company_id" 
+                                                   options="{'no_create': True, 'no_create_edit': True}"
+                                                   required="1"/>
+                                            <field name="target_non_fiscal_percentage" 
+                                                   widget="percentage"
+                                                   required="1"/>
+                                        </group>
+                                    </group>
+                                    <group string="Cash Payment Methods">
+                                        <field name="cash_payment_method_ids" widget="many2many_tags" 
+                                               options="{'no_create': True}"/>
+                                        <div class="alert alert-info" role="alert">
+                                            <p>
+                                                <strong>Note:</strong> If no payment methods are selected, 
+                                                this rule will apply to all cash payment methods in the POS configuration.
+                                            </p>
+                                        </div>
+                                    </group>
+                                </sheet>
+                            </form>
+                        </field>
                     </group>
                 </group>
             </xpath>
