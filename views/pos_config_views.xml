@@ -10,22 +10,50 @@
             <xpath expr="//field[@name='name']" position="after">
                 <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4">
                     <group>
-                        <!-- Placeholder fields to be added later:
                         <field name="cash_company_rule_ids" 
-                               widget="many2many_tags" 
-                               options="{'no_create': True}"/>
-                        <field name="enable_multi_company_cash_control"/>
-                        -->
-                        <div class="alert alert-info" role="alert">
-                            <p>
-                                <strong>Multi-Company Cash Control</strong>
-                            </p>
-                            <p>
-                                Configure rules for routing cash payments to fiscal or 
-                                non-fiscal companies. This feature will be available in 
-                                a future update.
-                            </p>
-                        </div>
+                               context="{'default_pos_config_id': active_id}">
+                            <tree string="Cash Company Rules" editable="bottom">
+                                <field name="sequence" widget="handle"/>
+                                <field name="name"/>
+                                <field name="fiscal_company_id" 
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
+                                <field name="non_fiscal_company_id" 
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
+                                <field name="target_non_fiscal_percentage"/>
+                                <field name="active" widget="boolean_toggle"/>
+                            </tree>
+                            <form string="Cash Company Rule">
+                                <sheet>
+                                    <group>
+                                        <group string="General Information">
+                                            <field name="name"/>
+                                            <field name="pos_config_id" 
+                                                   options="{'no_create': True, 'no_create_edit': True}" 
+                                                   invisible="1"/>
+                                            <field name="sequence" widget="handle"/>
+                                            <field name="active"/>
+                                        </group>
+                                        <group string="Company Selection">
+                                            <field name="fiscal_company_id" 
+                                                   options="{'no_create': True, 'no_create_edit': True}"/>
+                                            <field name="non_fiscal_company_id" 
+                                                   options="{'no_create': True, 'no_create_edit': True}"/>
+                                            <field name="target_non_fiscal_percentage"/>
+                                        </group>
+                                    </group>
+                                    <group string="Cash Payment Methods">
+                                        <field name="cash_payment_method_ids" widget="many2many_tags" 
+                                               options="{'no_create': True}"/>
+                                        <div class="alert alert-info" role="alert">
+                                            <p>
+                                                <strong>Note:</strong> If no payment methods are selected, 
+                                                this rule will apply to all cash payment methods in the POS configuration.
+                                            </p>
+                                        </div>
+                                    </group>
+                                </sheet>
+                            </form>
+                        </field>
                     </group>
                 </group>
             </xpath>
