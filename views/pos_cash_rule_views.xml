@@ -16,12 +16,12 @@
         </field>
     </record>
 
-    <!-- Inline tree view for use in POS config form -->
+    <!-- Inline list view for use in POS config form -->
     <record id="view_pos_cash_company_rule_tree_inline" model="ir.ui.view">
-        <field name="name">pos.cash.company.rule.tree.inline</field>
+        <field name="name">pos.cash.company.rule.list.inline</field>
         <field name="model">pos.cash.company.rule</field>
         <field name="arch" type="xml">
-            <tree string="Cash Company Rules" editable="bottom">
+            <list string="Cash Company Rules" editable="bottom">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="fiscal_company_id" 
@@ -30,7 +30,7 @@
                        options="{'no_create': True, 'no_create_edit': True}"/>
                 <field name="target_non_fiscal_percentage"/>
                 <field name="active" widget="boolean_toggle"/>
-            </tree>
+            </list>
         </field>
     </record>
 
