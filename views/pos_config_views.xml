@@ -6,9 +6,9 @@
         <field name="model">pos.config</field>
         <field name="inherit_id" ref="point_of_sale.pos_config_view_form"/>
         <field name="arch" type="xml">
-            <!-- Add new section after payment methods -->
-            <xpath expr="//group[@name='payment']" position="after">
-                <group string="Multi-Company Cash Control" name="multi_company_cash_control">
+            <!-- Add new section - use name field which should definitely exist -->
+            <xpath expr="//field[@name='name']" position="after">
+                <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4">
                     <group>
                         <!-- Placeholder fields to be added later:
                         <field name="cash_company_rule_ids" 
