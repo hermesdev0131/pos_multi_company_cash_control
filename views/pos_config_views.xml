@@ -11,7 +11,7 @@
                 <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4">
                     <group>
                         <field name="cash_company_rule_ids" 
-                               context="{'default_pos_config_id': active_id}"/>
+                               context="{'default_pos_config_id': id}"/>
                     </group>
                 </group>
             </xpath>
