@@ -28,8 +28,8 @@ Future Enhancements:
 * Percentage-based routing rules
 * Enhanced receipt templates with company-specific QR codes
     """,
-    'author': 'Your Company',
-    'website': 'https://www.yourcompany.com',
+    'author': 'Hiroshi, WolfAIX',
+    'website': 'https://www.wolfaix.com',
     'depends': [
         'point_of_sale',
         'account',
