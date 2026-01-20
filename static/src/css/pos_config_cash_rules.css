@@ -6,28 +6,53 @@
 }
 
 /* Column width adjustments for cash company rules */
+/* Sequence column (handle) */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="sequence"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="sequence"] {
+    min-width: 40px;
+    width: 4%;
+}
+
+/* Rule Name column */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="name"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="name"] {
+    min-width: 150px;
+    width: 16%;
+}
+
+/* POS Configuration column */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="pos_config_id"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="pos_config_id"] {
+    min-width: 150px;
+    width: 16%;
+}
+
+/* Fiscal Company column */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="fiscal_company_id"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="fiscal_company_id"] {
     min-width: 180px;
+    width: 20%;
+}
+
+/* Non-Fiscal Company column */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="non_fiscal_company_id"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="non_fiscal_company_id"] {
+    min-width: 200px;
     width: 22%;
 }
 
-.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="fiscal_company_id"],
-.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="fiscal_company_id"] {
-    min-width: 200px;
-    width: 26%;
-}
-
-.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="non_fiscal_company_id"],
-.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="non_fiscal_company_id"] {
-    min-width: 220px;
-    width: 26%;
-}
-
+/* Target Non-Fiscal Percentage column */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="target_non_fiscal_percentage"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="target_non_fiscal_percentage"] {
-    min-width: 200px;
-    width: 26%;
+    min-width: 180px;
+    width: 18%;
+}
+
+/* Active column */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="active"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="active"] {
+    min-width: 80px;
+    width: 4%;
 }
 
 /* Adjust header font size and ensure full text is visible */

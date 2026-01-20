@@ -12,26 +12,24 @@
                     <group>
                         <field name="cash_company_rule_ids" 
                                context="{'default_pos_config_id': id}"
-                               nolabel="1">
+                               nolabel="1"
+                               options="{'form_view_buttons': True, 'create': True, 'delete': True}">
                             <list decoration-muted="not active" 
                                   default_order="sequence"
-                                  editable="bottom"
                                   string="Cash Company Rules"
                                   create="1"
                                   delete="1">
-                                <field name="sequence" widget="handle" column_invisible="1"/>
-                                <field name="name" string="Rule Name" required="1"/>
+                                <field name="sequence" widget="handle"/>
+                                <field name="name" string="Rule Name"/>
+                                <field name="pos_config_id" string="POS Configuration"
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
                                 <field name="fiscal_company_id" string="Fiscal Company"
-                                       options="{'no_create': True, 'no_create_edit': True}"
-                                       required="1"/>
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
                                 <field name="non_fiscal_company_id" string="Non-Fiscal Company"
-                                       options="{'no_create': True, 'no_create_edit': True}"
-                                       required="1"/>
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
                                 <field name="target_non_fiscal_percentage" string="Target Non-Fiscal Percentage"
-                                       widget="percentage"
-                                       required="1"/>
-                                <field name="active" widget="boolean_toggle" column_invisible="1"/>
-                                <field name="pos_config_id" column_invisible="1"/>
+                                       widget="percentage"/>
+                                <field name="active" widget="boolean_toggle"/>
                             </list>
                             <form>
                                 <sheet>
