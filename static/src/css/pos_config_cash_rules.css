@@ -1,0 +1,54 @@
+/* CSS for Multi-Company Cash Control inline list view */
+/* Target the specific One2many field for cash company rules */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_view .o_list_table {
+    table-layout: auto;
+    width: 100%;
+}
+
+/* Column width adjustments for cash company rules */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="name"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="name"] {
+    min-width: 180px;
+    width: 22%;
+}
+
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="fiscal_company_id"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="fiscal_company_id"] {
+    min-width: 200px;
+    width: 26%;
+}
+
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="non_fiscal_company_id"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="non_fiscal_company_id"] {
+    min-width: 220px;
+    width: 26%;
+}
+
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="target_non_fiscal_percentage"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="target_non_fiscal_percentage"] {
+    min-width: 200px;
+    width: 26%;
+}
+
+/* Adjust header font size and ensure full text is visible */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th {
+    font-size: 0.875rem;
+    white-space: normal;
+    word-wrap: break-word;
+    padding: 8px 12px;
+    line-height: 1.4;
+}
+
+/* Adjust data cell font size */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td {
+    font-size: 0.875rem;
+    padding: 8px 12px;
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+/* Ensure table container allows horizontal scroll if needed */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_view {
+    overflow-x: auto;
+    min-width: 100%;
+}

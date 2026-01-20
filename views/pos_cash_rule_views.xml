@@ -21,15 +21,17 @@
         <field name="name">pos.cash.company.rule.list.inline</field>
         <field name="model">pos.cash.company.rule</field>
         <field name="arch" type="xml">
-            <list string="Cash Company Rules" editable="bottom">
-                <field name="sequence" widget="handle"/>
-                <field name="name"/>
-                <field name="fiscal_company_id" 
+            <list string="Cash Company Rules" editable="bottom" default_order="sequence">
+                <field name="sequence" widget="handle" column_invisible="1"/>
+                <field name="name" string="Rule Name"/>
+                <field name="fiscal_company_id" string="Fiscal"
                        options="{'no_create': True, 'no_create_edit': True}"/>
-                <field name="non_fiscal_company_id" 
+                <field name="non_fiscal_company_id" string="Non-Fiscal"
                        options="{'no_create': True, 'no_create_edit': True}"/>
-                <field name="target_non_fiscal_percentage"/>
-                <field name="active" widget="boolean_toggle"/>
+                <field name="target_non_fiscal_percentage" string="Target %"
+                       widget="percentage"/>
+                <field name="active" widget="boolean_toggle" column_invisible="1"/>
+                <field name="pos_config_id" column_invisible="1"/>
             </list>
         </field>
     </record>
