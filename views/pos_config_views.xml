@@ -6,14 +6,13 @@
         <field name="model">pos.config</field>
         <field name="inherit_id" ref="point_of_sale.pos_config_view_form"/>
         <field name="arch" type="xml">
-            <!-- Add new section - insert at the end of sheet to break out of column layout -->
-            <xpath expr="//sheet[last()]" position="inside">
-                <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4 o_group_col_12" col="12">
-                    <group class="o_group_col_12" col="12">
+            <!-- Add new section - use name field which should definitely exist -->
+            <xpath expr="//field[@name='name']" position="after">
+                <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4">
+                    <group>
                         <field name="cash_company_rule_ids" 
                                context="{'default_pos_config_id': id}"
-                               nolabel="1"
-                               class="o_field_one2many">
+                               nolabel="1">
                             <list decoration-muted="not active" 
                                   default_order="sequence"
                                   string="Cash Company Rules"
@@ -22,8 +21,7 @@
                                 <field name="sequence" widget="handle"/>
                                 <field name="name" string="Rule Name"/>
                                 <field name="pos_config_id" string="POS Configuration"
-                                       options="{'no_create': True, 'no_create_edit': True}"
-                                       column_invisible="1"/>
+                                       options="{'no_create': True, 'no_create_edit': True}"/>
                                 <field name="fiscal_company_id" string="Fiscal Company"
                                        options="{'no_create': True, 'no_create_edit': True}"/>
                                 <field name="non_fiscal_company_id" string="Non-Fiscal Company"
