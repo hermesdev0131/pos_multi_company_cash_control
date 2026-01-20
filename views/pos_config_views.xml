@@ -8,11 +8,12 @@
         <field name="arch" type="xml">
             <!-- Add new section - use name field which should definitely exist -->
             <xpath expr="//field[@name='name']" position="after">
-                <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4">
-                    <group>
+                <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4 o_group_col_12">
+                    <group class="o_group_col_12">
                         <field name="cash_company_rule_ids" 
                                context="{'default_pos_config_id': id}"
-                               nolabel="1">
+                               nolabel="1"
+                               class="o_field_one2many">
                             <list decoration-muted="not active" 
                                   default_order="sequence"
                                   string="Cash Company Rules"
