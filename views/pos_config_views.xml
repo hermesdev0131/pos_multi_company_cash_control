@@ -12,8 +12,7 @@
                     <group>
                         <field name="cash_company_rule_ids" 
                                context="{'default_pos_config_id': id}"
-                               nolabel="1"
-                               options="{'form_view_buttons': True, 'create': True, 'delete': True}">
+                               nolabel="1">
                             <list decoration-muted="not active" 
                                   default_order="sequence"
                                   string="Cash Company Rules"
