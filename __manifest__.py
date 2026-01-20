@@ -40,9 +40,10 @@ Future Enhancements:
         'views/pos_config_views.xml',
     ],
     'assets': {
-        'point_of_sale.assets': [
-            'pos_multi_company_cash_control/static/src/xml/pos_receipt_extension.xml',
-        ],
+        # POS frontend assets - commented out until receipt extension is implemented
+        # 'point_of_sale.assets': [
+        #     'pos_multi_company_cash_control/static/src/xml/pos_receipt_extension.xml',
+        # ],
         'web.assets_backend': [
             'pos_multi_company_cash_control/static/src/css/pos_config_cash_rules.css',
         ],
