@@ -37,6 +37,9 @@
                                             <field name="pos_config_id" 
                                                    options="{'no_create': True, 'no_create_edit': True}" 
                                                    invisible="1"/>
+                                            <field name="company_id" 
+                                                   options="{'no_create': True, 'no_create_edit': True}"
+                                                   invisible="1"/>
                                             <field name="sequence" widget="handle"/>
                                             <field name="active"/>
                                         </group>

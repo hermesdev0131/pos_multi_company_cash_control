@@ -17,11 +17,20 @@ class PosCashCompanyRule(models.Model):
     _name = 'pos.cash.company.rule'
     _description = 'POS Cash Company Routing Rule'
     _order = 'sequence, id'
+    _check_company_auto = True
 
     name = fields.Char(
         string='Rule Name',
         required=True,
         help='Descriptive name for this routing rule'
+    )
+    
+    company_id = fields.Many2one(
+        'res.company',
+        string='Company',
+        required=True,
+        default=lambda self: self.env.company,
+        help='Company this rule belongs to'
     )
     
     sequence = fields.Integer(
@@ -43,6 +52,26 @@ class PosCashCompanyRule(models.Model):
         ondelete='cascade',
         help='POS configuration this rule applies to'
     )
+    
+    @api.model_create_multi
+    def create(self, vals_list):
+        """
+        Override create to set company_id from pos_config_id if not provided.
+        """
+        for vals in vals_list:
+            if 'company_id' not in vals and 'pos_config_id' in vals:
+                pos_config = self.env['pos.config'].browse(vals['pos_config_id'])
+                if pos_config.company_id:
+                    vals['company_id'] = pos_config.company_id.id
+        return super().create(vals_list)
+    
+    @api.onchange('pos_config_id')
+    def _onchange_pos_config_id(self):
+        """
+        Set company_id when pos_config_id changes.
+        """
+        if self.pos_config_id and self.pos_config_id.company_id:
+            self.company_id = self.pos_config_id.company_id
     
     fiscal_company_id = fields.Many2one(
         'res.company',
