@@ -8,11 +8,10 @@
         <field name="arch" type="xml">
             <!-- Add new section - use name field which should definitely exist -->
             <xpath expr="//field[@name='name']" position="after">
-                <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4">
-                    <group>
-                        <field name="cash_company_rule_ids" 
-                               context="{'default_pos_config_id': id}"
-                               nolabel="1">
+                <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4 o_group_col_12" col="12">
+                    <field name="cash_company_rule_ids" 
+                           context="{'default_pos_config_id': id}"
+                           nolabel="1">
                             <list decoration-muted="not active" 
                                   default_order="sequence"
                                   string="Cash Company Rules"
@@ -66,7 +65,6 @@
                                 </sheet>
                             </form>
                         </field>
-                    </group>
                 </group>
             </xpath>
         </field>
