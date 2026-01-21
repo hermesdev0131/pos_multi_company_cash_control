@@ -28,8 +28,7 @@
                        options="{'no_create': True, 'no_create_edit': True}"/>
                 <field name="non_fiscal_company_id" string="Non-Fiscal"
                        options="{'no_create': True, 'no_create_edit': True}"/>
-                <field name="target_non_fiscal_percentage" string="Target %"
-                       widget="percentage"/>
+                <field name="target_non_fiscal_percentage" string="Target %"/>
                 <field name="active" widget="boolean_toggle" column_invisible="1"/>
                 <field name="pos_config_id" column_invisible="1"/>
             </list>
@@ -61,6 +60,9 @@
                             <field name="non_fiscal_company_id" 
                                    options="{'no_create': True, 'no_create_edit': True}"/>
                             <field name="target_non_fiscal_percentage"/>
+                            <div class="text-muted">
+                                <small>Enter a value between 0 and 100 (e.g., 70 for 70%)</small>
+                            </div>
                         </group>
                     </group>
                     <group string="Cash Payment Methods">
@@ -109,6 +111,9 @@
                             <field name="non_fiscal_company_id" 
                                    options="{'no_create': True, 'no_create_edit': True}"/>
                             <field name="target_non_fiscal_percentage"/>
+                            <div class="text-muted">
+                                <small>Enter a value between 0 and 100 (e.g., 70 for 70%)</small>
+                            </div>
                         </group>
                     </group>
                     <group string="Cash Payment Methods">
