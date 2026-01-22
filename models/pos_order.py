@@ -5,12 +5,6 @@ from odoo import api, models
 
 _logger = logging.getLogger(__name__)
 
-# Module-level log to verify file is loaded (this runs when module is imported)
-try:
-    _logger.warning("POS MCC: ========== Module pos_order.py LOADED ==========")
-except Exception as e:
-    print(f"POS MCC: Error in module-level logging: {e}")
-
 
 class PosOrder(models.Model):
     _inherit = 'pos.order'
