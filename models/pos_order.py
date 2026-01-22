@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
-from odoo import models
+from odoo import api, models
 
 _logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ class PosOrder(models.Model):
     """
     _inherit = 'pos.order'
 
+    @api.model
     def _order_fields(self, ui_order):
         """
         Override _order_fields to inject fiscal/non-fiscal company assignment
