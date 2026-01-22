@@ -247,23 +247,29 @@ class PosCashCompanyRule(models.Model):
     def decide_company_for_amount(self, order_amount):
         """
         Decide which company (fiscal or non-fiscal) should receive the cash payment.
-        
-        Decision logic:
-        1. If no totals exist yet (both are 0) → route to non-fiscal company
-        2. Calculate current non-fiscal ratio
+
+        Decision logic (Final Business Rules):
+        1. First order of the day → ALWAYS fiscal company
+        2. Calculate current non-fiscal ratio = (non_fiscal_total / total) * 100
         3. If ratio < target percentage → route to non-fiscal company
-        4. Otherwise → route to fiscal company
-        
+        4. If ratio >= target percentage → route to fiscal company
+
+        This implements ticket-level assignment (never split tickets):
+        - Each ticket is assigned to ONE company at creation time
+        - Overshooting the target due to high-value tickets is accepted
+        - No retroactive changes or end-of-day rebalancing
+        - Totals are calculated from today's orders (not stored counters)
+
         Args:
             order_amount (float): The amount of the order being processed.
                                  Currently not used but available for future logic.
-        
+
         Returns:
             res.company: The company record that should receive this cash payment
-        
+
         Note:
-            This method will be called from pos.order.create_from_ui in a future update
-            to dynamically assign the company based on today's routing ratio.
+            This method is called from pos.order._order_fields() override
+            to dynamically assign the company before order record creation.
         """
         self.ensure_one()
         
@@ -273,14 +279,14 @@ class PosCashCompanyRule(models.Model):
         fiscal_total = totals['fiscal']
         non_fiscal_total = totals['non_fiscal']
         total_today = fiscal_total + non_fiscal_total
-        
-        # If no orders today, route to non-fiscal company
+
+        # BUSINESS RULE: First order of the day always goes to fiscal company
         if total_today == 0.0:
-            return self.non_fiscal_company_id
-        
+            return self.fiscal_company_id
+
         # Calculate current non-fiscal ratio
         current_non_fiscal_ratio = (non_fiscal_total / total_today) * 100.0
-        
+
         # If current ratio is below target, route to non-fiscal to increase it
         if current_non_fiscal_ratio < self.target_non_fiscal_percentage:
             return self.non_fiscal_company_id
