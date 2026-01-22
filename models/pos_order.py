@@ -5,6 +5,12 @@ from odoo import api, models
 
 _logger = logging.getLogger(__name__)
 
+# Module-level log to verify file is loaded (this runs when module is imported)
+try:
+    _logger.warning("POS MCC: ========== Module pos_order.py LOADED ==========")
+except Exception as e:
+    print(f"POS MCC: Error in module-level logging: {e}")
+
 
 class PosOrder(models.Model):
     _inherit = 'pos.order'
@@ -136,3 +142,20 @@ class PosOrder(models.Model):
         result = super().create_from_ui(orders, draft=draft)
         _logger.warning("POS MCC: ===== create_from_ui EXITING ===== result: %s", result)
         return result
+    
+    def test_pos_mcc_module(self):
+        """
+        Test method to verify the module is loaded and working.
+        Call this from Odoo shell or via a button to test.
+        """
+        _logger.warning("POS MCC: test_pos_mcc_module() called - Module is working!")
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'POS MCC Test',
+                'message': 'Module is loaded and working! Check logs for "POS MCC" entries.',
+                'type': 'success',
+                'sticky': False,
+            }
+        }
