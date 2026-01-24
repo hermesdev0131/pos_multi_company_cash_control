@@ -36,6 +36,7 @@ Future Enhancements:
     ],
     'data': [
         'security/ir.model.access.csv',
+        'security/ir_rule.xml',
         'views/pos_cash_rule_views.xml',
         'views/pos_config_views.xml',
     ],

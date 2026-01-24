@@ -4,6 +4,9 @@ from odoo import models, fields, api
 from odoo.exceptions import ValidationError
 from datetime import datetime
 from pytz import timezone, UTC
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class PosCashCompanyRule(models.Model):
@@ -127,58 +130,85 @@ class PosCashCompanyRule(models.Model):
                     'Target non-fiscal percentage must be between 0 and 100.'
                 )
 
-    def _get_today_date_range(self):
+    def _get_user_timezone(self):
         """
-        Get the start and end datetime for "today" in the POS company's timezone.
+        Get the logged-in user's timezone.
+        
+        CRITICAL: Orders are stored in UTC in the database. This method returns the
+        user's timezone to convert order dates from UTC to user timezone for filtering.
+        All POS operations (creating orders, filtering, searching) use the same timezone
+        (the logged-in user's timezone) to ensure consistency.
+        
+        Returns:
+            tuple: (timezone_object, timezone_name, timezone_source)
+        """
+        # Get timezone from logged-in user
+        user = self.env.user
+        if user and user.tz:
+            try:
+                tz = timezone(user.tz)
+                return tz, user.tz, 'user_tz'
+            except Exception:
+                # If timezone is invalid, fall back to UTC
+                pass
+        
+        # If not set, default to UTC
+        # NOTE: User timezone should be configured in User Preferences for accurate filtering
+        return UTC, 'UTC', 'default_UTC_user_not_configured'
+    
+    def _get_today_date_range(self, session=None):
+        """
+        Get the start and end datetime for "today" in the logged-in user's timezone.
+        
+        CRITICAL: Uses logged-in user's timezone to ensure consistency across all POS operations.
+        All operations (creating orders, filtering, searching) use the same timezone (user's timezone).
+        
+        Args:
+            session (pos.session, optional): POS session record (for logging purposes only).
         
         Returns:
             tuple: (start_datetime, end_datetime) where:
-                - start_datetime: Beginning of today (00:00:00) in company timezone
-                - end_datetime: Current datetime (now) in company timezone
+                - start_datetime: Beginning of today (00:00:00) in user's timezone (converted to UTC)
+                - end_datetime: Current datetime (now) in user's timezone (converted to UTC)
         
-        The datetimes are returned as UTC-aware datetime objects for use in ORM queries.
+        The datetimes are returned as naive UTC datetimes for use in ORM queries.
         """
         self.ensure_one()
         
-        # Get the company from POS config (fallback to fiscal company if not set)
-        company = self.pos_config_id.company_id or self.fiscal_company_id
-        if not company:
-            # Fallback to user's company if no company found
-            company = self.env.company
+        # CRITICAL: Use logged-in user's timezone for all operations
+        # This ensures all POS operations (creating orders, filtering, searching) use the same timezone
+        tz, tz_name, tz_source = self._get_user_timezone()
         
-        # Get company timezone or default to UTC
-        tz_name = company.partner_id.tz or 'UTC'
-        try:
-            tz = timezone(tz_name)
-        except Exception:
-            # Fallback to UTC if timezone is invalid
-            tz = UTC
-        
-        # Get current time in company timezone
+        # Get current time in user's timezone
         now_tz = datetime.now(tz)
         
-        # Start of today in company timezone (00:00:00)
+        # Start of today in user's timezone (00:00:00)
         start_today = now_tz.replace(hour=0, minute=0, second=0, microsecond=0)
         
         # End of today is current time
         end_today = now_tz
         
         # Convert to UTC for ORM queries (Odoo stores datetimes in UTC)
-        start_utc = start_today.astimezone(UTC)
-        end_utc = end_today.astimezone(UTC)
+        # CRITICAL: Odoo datetime fields are stored as naive datetimes in UTC
+        # We need to convert to naive datetime (remove timezone info) for proper comparison
+        start_utc = start_today.astimezone(UTC).replace(tzinfo=None)
+        end_utc = end_today.astimezone(UTC).replace(tzinfo=None)
         
         return (start_utc, end_utc)
 
-    def _get_today_cash_totals(self):
+    def _get_today_cash_totals(self, session=None):
         """
         Compute today's cash totals for fiscal and non-fiscal companies.
         
         Searches for paid POS orders that:
         - Are in 'paid' state
         - Belong to either fiscal or non-fiscal company
-        - Were created today (in company timezone)
+        - Were created today (in logged-in user's timezone)
         - Include cash payment methods specified in the rule
           (or all cash payment methods if rule has no specific methods)
+        
+        Args:
+            session (pos.session, optional): POS session record. Used to determine timezone.
         
         Returns:
             dict: {
@@ -188,63 +218,153 @@ class PosCashCompanyRule(models.Model):
         """
         self.ensure_one()
         
-        # Get today's date range
-        start_datetime, end_datetime = self._get_today_date_range()
+        # Get today's date range using logged-in user's timezone
+        start_datetime, end_datetime = self._get_today_date_range(session=session)
         
         # Get cash payment method IDs to filter by
         # If rule has specific methods, use those; otherwise get all cash methods
         if self.cash_payment_method_ids:
             cash_method_ids = self.cash_payment_method_ids.ids
         else:
-            # Get all cash payment methods from the POS config
-            cash_methods = self.env['pos.payment.method'].search([
-                ('is_cash_count', '=', True),
-                '|',
-                ('pos_config_ids', '=', False),
-                ('pos_config_ids', 'in', [self.pos_config_id.id])
-            ])
+            # Get cash payment methods from the POS config
+            # In Odoo, pos.config has payment_method_ids (not the other way around)
+            config_payment_methods = self.pos_config_id.payment_method_ids
+            # Filter for cash methods only
+            cash_methods = config_payment_methods.filtered(lambda pm: pm.is_cash_count)
             cash_method_ids = cash_methods.ids if cash_methods else []
         
         # If no cash methods found, return zeros
         if not cash_method_ids:
             return {'fiscal': 0.0, 'non_fiscal': 0.0}
         
-        # Build domain for orders with cash payments
-        # Use a more efficient query by joining with pos.payment
-        # Find orders that have at least one payment with a cash method
-        cash_payment_ids = self.env['pos.payment'].search([
-            ('payment_method_id', 'in', cash_method_ids)
-        ]).mapped('pos_order_id').ids
-        
+        # CRITICAL FIX: Filter cash payments by date BEFORE getting order IDs
+        # The previous code was getting ALL cash payments ever, then filtering orders by date
+        # This is inefficient and could cause incorrect totals if there are old unpaid orders
+        # We need to filter cash payments by the order's date_order to ensure we only get
+        # payments from orders created today
+        # 
+        # IMPORTANT: We need to search in both company contexts to get all cash payments
+        # from both fiscal and non-fiscal companies
+        # Use self.sudo().with_company().env to get sudo environment with company context
+        sudo_env_fiscal = self.sudo().with_company(self.fiscal_company_id).env
+        cash_payments_fiscal = sudo_env_fiscal['pos.payment'].search([
+            ('payment_method_id', 'in', cash_method_ids),
+            ('pos_order_id.date_order', '>=', start_datetime),
+            ('pos_order_id.date_order', '<=', end_datetime),
+        ])
+        sudo_env_non_fiscal = self.sudo().with_company(self.non_fiscal_company_id).env
+        cash_payments_non_fiscal = sudo_env_non_fiscal['pos.payment'].search([
+            ('payment_method_id', 'in', cash_method_ids),
+            ('pos_order_id.date_order', '>=', start_datetime),
+            ('pos_order_id.date_order', '<=', end_datetime),
+        ])
+        # Combine and deduplicate order IDs
+        cash_payment_ids = list(set(
+            cash_payments_fiscal.mapped('pos_order_id').ids +
+            cash_payments_non_fiscal.mapped('pos_order_id').ids
+        ))
+
         if not cash_payment_ids:
             return {'fiscal': 0.0, 'non_fiscal': 0.0}
         
+        # CRITICAL: Use with_company() to explicitly switch context for each company
+        # This ensures we can query orders from both companies regardless of current session company
+        # Even with sudo(), record rules might filter based on company context
+        
         # Search for paid orders in today's range for fiscal company
-        fiscal_orders = self.env['pos.order'].search([
+        # Switch to fiscal company context to ensure we can see all fiscal orders
+        # Use self.sudo().with_company().env to get sudo environment with company context
+        fiscal_env = self.sudo().with_company(self.fiscal_company_id).env
+        
+        # CRITICAL: Use logged-in user's timezone for all operations
+        # This ensures all POS operations (creating orders, filtering, searching) use the same timezone
+        tz, tz_name, tz_source = self._get_user_timezone()
+        
+        # Get today's date in user timezone for filtering
+        now_tz = datetime.now(tz)
+        today_local_date = now_tz.date()
+        
+        # First, get orders within the UTC datetime range (for performance)
+        fiscal_orders_candidate = fiscal_env['pos.order'].search([
             ('id', 'in', cash_payment_ids),
             ('state', '=', 'paid'),
             ('company_id', '=', self.fiscal_company_id.id),
             ('date_order', '>=', start_datetime),
             ('date_order', '<=', end_datetime),
         ])
+        
+        # CRITICAL: Filter by DATE in user timezone, not just UTC datetime range
+        # This ensures orders that are "today" in user timezone are included,
+        # even if they appear as "yesterday" in UTC
+        # All orders are converted from UTC to user timezone before filtering
+        fiscal_orders = fiscal_env['pos.order']
+        for order in fiscal_orders_candidate:
+            if order.date_order:
+                # Convert order date from UTC to user timezone
+                if order.date_order.tzinfo is None:
+                    # Naive datetime - assume UTC
+                    order_date_utc_aware = UTC.localize(order.date_order)
+                else:
+                    order_date_utc_aware = order.date_order
+                order_date_local = order_date_utc_aware.astimezone(tz)
+                order_date_local_date = order_date_local.date()
+                
+                # Only include if order date matches today's date in user timezone
+                if order_date_local_date == today_local_date:
+                    fiscal_orders |= order
+        
         fiscal_total = sum(fiscal_orders.mapped('amount_total')) if fiscal_orders else 0.0
         
         # Search for paid orders in today's range for non-fiscal company
-        non_fiscal_orders = self.env['pos.order'].search([
+        # Switch to non-fiscal company context to ensure we can see all non-fiscal orders
+        # Use self.sudo().with_company().env to get sudo environment with company context
+        non_fiscal_env = self.sudo().with_company(self.non_fiscal_company_id).env
+        
+        # CRITICAL: Use logged-in user's timezone for all operations
+        # This ensures all POS operations (creating orders, filtering, searching) use the same timezone
+        tz, tz_name, tz_source = self._get_user_timezone()
+        
+        # Get today's date in user timezone for filtering
+        now_tz = datetime.now(tz)
+        today_local_date = now_tz.date()
+        
+        # First, get orders within the UTC datetime range (for performance)
+        non_fiscal_orders_candidate = non_fiscal_env['pos.order'].search([
             ('id', 'in', cash_payment_ids),
             ('state', '=', 'paid'),
             ('company_id', '=', self.non_fiscal_company_id.id),
             ('date_order', '>=', start_datetime),
             ('date_order', '<=', end_datetime),
         ])
-        non_fiscal_total = sum(non_fiscal_orders.mapped('amount_total')) if non_fiscal_orders else 0.0
         
+        # CRITICAL: Filter by DATE in user timezone, not just UTC datetime range
+        # This ensures orders that are "today" in user timezone are included,
+        # even if they appear as "yesterday" in UTC
+        # All orders are converted from UTC to user timezone before filtering
+        non_fiscal_orders = non_fiscal_env['pos.order']
+        for order in non_fiscal_orders_candidate:
+            if order.date_order:
+                # Convert order date from UTC to user timezone
+                if order.date_order.tzinfo is None:
+                    # Naive datetime - assume UTC
+                    order_date_utc_aware = UTC.localize(order.date_order)
+                else:
+                    order_date_utc_aware = order.date_order
+                order_date_local = order_date_utc_aware.astimezone(tz)
+                order_date_local_date = order_date_local.date()
+                
+                # Only include if order date matches today's date in user timezone
+                if order_date_local_date == today_local_date:
+                    non_fiscal_orders |= order
+        
+        non_fiscal_total = sum(non_fiscal_orders.mapped('amount_total')) if non_fiscal_orders else 0.0
+
         return {
             'fiscal': float(fiscal_total),
             'non_fiscal': float(non_fiscal_total)
         }
 
-    def decide_company_for_amount(self, order_amount):
+    def decide_company_for_amount(self, order_amount, session=None):
         """
         Decide which company (fiscal or non-fiscal) should receive the cash payment.
 
@@ -258,23 +378,25 @@ class PosCashCompanyRule(models.Model):
         - Each ticket is assigned to ONE company at creation time
         - Overshooting the target due to high-value tickets is accepted
         - No retroactive changes or end-of-day rebalancing
-        - Totals are calculated from today's orders (not stored counters)
+        - Totals are calculated from today's orders using logged-in user's timezone
 
         Args:
             order_amount (float): The amount of the order being processed.
                                  Currently not used but available for future logic.
+            session (pos.session, optional): POS session record. Used to determine timezone
+                                            for date filtering.
 
         Returns:
             res.company: The company record that should receive this cash payment
 
         Note:
-            This method is called from pos.order._order_fields() override
+            This method is called from pos.order.sync_from_ui() override
             to dynamically assign the company before order record creation.
         """
         self.ensure_one()
         
-        # Get today's cash totals
-        totals = self._get_today_cash_totals()
+        # Get today's cash totals using logged-in user's timezone
+        totals = self._get_today_cash_totals(session=session)
         
         fiscal_total = totals['fiscal']
         non_fiscal_total = totals['non_fiscal']
@@ -289,7 +411,9 @@ class PosCashCompanyRule(models.Model):
 
         # If current ratio is below target, route to non-fiscal to increase it
         if current_non_fiscal_ratio < self.target_non_fiscal_percentage:
-            return self.non_fiscal_company_id
+            selected = self.non_fiscal_company_id
         else:
             # Current ratio is at or above target, route to fiscal company
-            return self.fiscal_company_id
+            selected = self.fiscal_company_id
+
+        return selected
