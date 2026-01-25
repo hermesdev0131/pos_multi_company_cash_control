@@ -51,6 +51,23 @@
         </record>
 
         <!--
+            Record Rule: Allow POS managers to write orders in any company
+            
+            CRITICAL: POS managers need full access to manage orders across companies
+            for the multi-company cash control to work properly.
+        -->
+        <record id="pos_order_multi_company_manager_rule" model="ir.rule">
+            <field name="name">POS Order: Multi-Company Cash Control Manager Access</field>
+            <field name="model_id" ref="point_of_sale.model_pos_order"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('point_of_sale.group_pos_manager'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <!--
             Record Rule: Allow POS users to read payments from companies they have access to
 
             When orders are created in different companies, their related payment records
