@@ -279,6 +279,56 @@ class PosOrder(models.Model):
 
         return super().read_pos_data(config_id, data_type)
 
+    def _export_for_ui(self, order):
+        """
+        Override to include order's company information in the exported data.
+        
+        This ensures the receipt template can access the order's company
+        (fiscal or non-fiscal) instead of the session's company.
+        
+        Args:
+            order: The pos.order record to export
+            
+        Returns:
+            dict: Order data with company information included
+        """
+        result = super()._export_for_ui(order)
+        
+        # Add order's company information for receipt rendering
+        if order.company_id:
+            company = order.company_id
+            # Logo is already base64 encoded string in Odoo, use it directly
+            logo_data = company.logo if company.logo else False
+            
+            result['company'] = {
+                'id': company.id,
+                'name': company.name,
+                'logo': logo_data,
+                'phone': company.phone or '',
+                'email': company.email or '',
+                'website': company.website or '',
+                'street': company.street or '',
+                'street2': company.street2 or '',
+                'city': company.city or '',
+                'state_id': company.state_id.id if company.state_id else False,
+                'state_name': company.state_id.name if company.state_id else '',
+                'zip': company.zip or '',
+                'country_id': company.country_id.id if company.country_id else False,
+                'country_name': company.country_id.name if company.country_id else '',
+                'vat': company.vat or '',
+                'company_registry': company.company_registry or '',
+            }
+            _logger.debug(
+                "[POS MCC][RECEIPT] Exported company data for order %s: %s (ID: %d)",
+                order.name,
+                company.name,
+                company.id
+            )
+        else:
+            _logger.warning("[POS MCC][RECEIPT] Order %s has no company_id", order.name)
+        
+        return result
+
     def _complete_values_from_session(self, session, values):
         """
         Override to prevent session company from overwriting our injected company_id
