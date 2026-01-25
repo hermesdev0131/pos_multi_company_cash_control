@@ -19,39 +19,62 @@
        owl="1">
 
         <!-- Override company name in header -->
+        <!-- Try multiple possible XPath selectors for company name -->
         <xpath expr="//div[hasclass('pos-receipt-company')]//h2" position="replace">
-            <h2><t t-esc="order.company_id.name"/></h2>
+            <h2 t-if="order.company_id and order.company_id.name" t-esc="order.company_id.name"/>
+            <h2 t-else="" t-esc="receipt.company.name"/>
+        </xpath>
+        
+        <!-- Alternative: Try to find company name by text content -->
+        <xpath expr="//h2[contains(text(), receipt.company.name)]" position="replace">
+            <h2 t-if="order.company_id and order.company_id.name" t-esc="order.company_id.name"/>
+            <h2 t-else="" t-esc="receipt.company.name"/>
         </xpath>
 
         <!-- Override company contact information -->
+        <!-- Try multiple possible XPath selectors -->
         <xpath expr="//div[hasclass('pos-receipt-contact')]" position="replace">
             <div class="pos-receipt-contact">
-                <t t-if="order.company_id.street">
-                    <div><t t-esc="order.company_id.street"/></div>
+                <t t-if="order.company_id">
+                    <t t-if="order.company_id.street">
+                        <div><t t-esc="order.company_id.street"/></div>
+                    </t>
+                    <t t-if="order.company_id.street2">
+                        <div><t t-esc="order.company_id.street2"/></div>
+                    </t>
+                    <t t-if="order.company_id.city or order.company_id.zip">
+                        <div>
+                            <t t-if="order.company_id.zip"><t t-esc="order.company_id.zip"/> </t>
+                            <t t-if="order.company_id.city"><t t-esc="order.company_id.city"/></t>
+                        </div>
+                    </t>
+                    <t t-if="order.company_id.state_name">
+                        <div><t t-esc="order.company_id.state_name"/></div>
+                    </t>
+                    <t t-if="order.company_id.country_name">
+                        <div><t t-esc="order.company_id.country_name"/></div>
+                    </t>
+                    <t t-if="order.company_id.vat">
+                        <div>VAT: <t t-esc="order.company_id.vat"/></div>
+                    </t>
+                    <t t-if="order.company_id.phone">
+                        <div>Tel: <t t-esc="order.company_id.phone"/></div>
+                    </t>
+                    <t t-if="order.company_id.email">
+                        <div>Email: <t t-esc="order.company_id.email"/></div>
+                    </t>
                 </t>
-                <t t-if="order.company_id.street2">
-                    <div><t t-esc="order.company_id.street2"/></div>
-                </t>
-                <t t-if="order.company_id.city or order.company_id.zip">
-                    <div>
-                        <t t-if="order.company_id.zip"><t t-esc="order.company_id.zip"/> </t>
-                        <t t-if="order.company_id.city"><t t-esc="order.company_id.city"/></t>
-                    </div>
-                </t>
-                <t t-if="order.company_id.state_id">
-                    <div><t t-esc="order.company_id.state_id.name"/></div>
-                </t>
-                <t t-if="order.company_id.country_id">
-                    <div><t t-esc="order.company_id.country_id.name"/></div>
-                </t>
-                <t t-if="order.company_id.vat">
-                    <div>VAT: <t t-esc="order.company_id.vat"/></div>
-                </t>
-                <t t-if="order.company_id.phone">
-                    <div>Tel: <t t-esc="order.company_id.phone"/></div>
-                </t>
-                <t t-if="order.company_id.email">
-                    <div>Email: <t t-esc="order.company_id.email"/></div>
+                <t t-else="">
+                    <!-- Fallback to session company -->
+                    <t t-if="receipt.company.street">
+                        <div><t t-esc="receipt.company.street"/></div>
+                    </t>
+                    <t t-if="receipt.company.city">
+                        <div><t t-esc="receipt.company.city"/></div>
+                    </t>
+                    <t t-if="receipt.company.vat">
+                        <div>VAT: <t t-esc="receipt.company.vat"/></div>
+                    </t>
                 </t>
             </div>
         </xpath>

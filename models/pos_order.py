@@ -332,6 +332,94 @@ class PosOrder(models.Model):
 
         return super().read_pos_data(config_id, data_type)
 
+    @api.model
+    def _export_for_ui(self, order):
+        """
+        Override to export order's company information and computed fields to frontend.
+        
+        CRITICAL: This method exports order data to the POS frontend for receipt rendering.
+        Without this, the receipt template cannot access:
+        - order.company_id (and its related fields like name, logo, address, etc.)
+        - order.is_fiscal_order (computed field)
+        - order.non_fiscal_qr_data (computed field)
+        
+        Args:
+            order: The pos.order record to export
+            
+        Returns:
+            dict: Order data with company information and computed fields included
+        """
+        try:
+            result = super()._export_for_ui(order)
+        except AttributeError:
+            # If _export_for_ui doesn't exist, try alternative method
+            _logger.warning("[POS MCC][RECEIPT] _export_for_ui not found, trying alternative export method")
+            # Fallback: use read() to get order data
+            result = order.read()[0] if order else {}
+        
+        # Ensure result is a dict
+        if not isinstance(result, dict):
+            _logger.error("[POS MCC][RECEIPT] _export_for_ui returned non-dict: %s", type(result))
+            result = {}
+        
+        # Export company_id with all related fields for receipt template
+        if order and order.company_id:
+            company = order.company_id
+            result['company_id'] = {
+                'id': company.id,
+                'name': company.name,
+                'logo': company.logo if company.logo else False,
+                'phone': company.phone or '',
+                'email': company.email or '',
+                'website': company.website or '',
+                'street': company.street or '',
+                'street2': company.street2 or '',
+                'city': company.city or '',
+                'zip': company.zip or '',
+                'state_id': company.state_id.id if company.state_id else False,
+                'state_name': company.state_id.name if company.state_id else '',
+                'country_id': company.country_id.id if company.country_id else False,
+                'country_name': company.country_id.name if company.country_id else '',
+                'vat': company.vat or '',
+                'company_registry': company.company_registry or '',
+            }
+            _logger.info(
+                "[POS MCC][RECEIPT] Exported company_id data for order %s: %s (ID: %d)",
+                order.name if order else 'N/A',
+                company.name,
+                company.id
+            )
+        else:
+            _logger.warning("[POS MCC][RECEIPT] Order %s has no company_id", order.name if order else 'N/A')
+        
+        # Export computed fields for receipt template
+        # Force computation if not already computed
+        if order:
+            try:
+                # CRITICAL: Compute is_fiscal_order first (it's needed for QR computation)
+                # Use sudo to avoid access errors when computing across companies
+                order.sudo()._compute_is_fiscal_order()
+                # Now compute QR data (depends on is_fiscal_order)
+                order.sudo()._compute_non_fiscal_qr_data()
+                
+                # Read the computed values
+                result['is_fiscal_order'] = order.is_fiscal_order
+                result['non_fiscal_qr_data'] = order.non_fiscal_qr_data if order.non_fiscal_qr_data else False
+                
+                _logger.info(
+                    "[POS MCC][RECEIPT] Exported computed fields for order %s: is_fiscal_order=%s, has_qr=%s, company_id=%s",
+                    order.name,
+                    order.is_fiscal_order,
+                    bool(order.non_fiscal_qr_data),
+                    order.company_id.id if order.company_id else 'None'
+                )
+            except Exception as e:
+                _logger.error("[POS MCC][RECEIPT] Error computing fields for order %s: %s", order.name, str(e))
+                result['is_fiscal_order'] = False
+                result['non_fiscal_qr_data'] = False
+        
+        return result
+
     def _complete_values_from_session(self, session, values):
         """
         Override to prevent session company from overwriting our injected company_id
