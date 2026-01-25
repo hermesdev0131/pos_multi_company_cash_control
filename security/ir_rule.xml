@@ -28,6 +28,29 @@
         </record>
 
         <!--
+            Record Rule: Allow POS users to write orders in companies they have access to
+            
+            CRITICAL: POS operations require write access to update order status, payments, etc.
+            This rule allows POS users to write orders in any company they have access to,
+            which is necessary for the multi-company cash control to work properly.
+            
+            Security Note:
+            - Only applies to POS users (point_of_sale.group_pos_user)
+            - Respects user's company access rights (company_ids)
+            - Users must be granted access to fiscal and non-fiscal companies in their user settings
+        -->
+        <record id="pos_order_multi_company_write_rule" model="ir.rule">
+            <field name="name">POS Order: Multi-Company Cash Control Write Access</field>
+            <field name="model_id" ref="point_of_sale.model_pos_order"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+            <field name="groups" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!--
             Record Rule: Allow POS users to read payments from companies they have access to
 
             When orders are created in different companies, their related payment records

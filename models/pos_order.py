@@ -349,13 +349,23 @@ class PosOrder(models.Model):
         Returns:
             dict: Order data with company information and computed fields included
         """
+        # Use sudo to avoid access errors when exporting orders from different companies
+        order_sudo = order.sudo() if order else None
+        
         try:
-            result = super()._export_for_ui(order)
-        except AttributeError:
-            # If _export_for_ui doesn't exist, try alternative method
-            _logger.warning("[POS MCC][RECEIPT] _export_for_ui not found, trying alternative export method")
-            # Fallback: use read() to get order data
-            result = order.read()[0] if order else {}
+            result = super()._export_for_ui(order_sudo if order_sudo else order)
+        except (AttributeError, Exception) as e:
+            # If _export_for_ui doesn't exist or fails, try alternative method
+            _logger.warning("[POS MCC][RECEIPT] _export_for_ui failed: %s, trying alternative export method", str(e))
+            # Fallback: use sudo to read order data
+            try:
+                if order_sudo:
+                    result = order_sudo.read()[0] if order_sudo else {}
+                else:
+                    result = {}
+            except Exception as e2:
+                _logger.error("[POS MCC][RECEIPT] Failed to read order data: %s", str(e2))
+                result = {}
         
         # Ensure result is a dict
         if not isinstance(result, dict):
@@ -363,8 +373,9 @@ class PosOrder(models.Model):
             result = {}
         
         # Export company_id with all related fields for receipt template
-        if order and order.company_id:
-            company = order.company_id
+        # Use sudo to access company data across companies
+        if order_sudo and order_sudo.company_id:
+            company = order_sudo.company_id.sudo()
             result['company_id'] = {
                 'id': company.id,
                 'name': company.name,
@@ -385,36 +396,36 @@ class PosOrder(models.Model):
             }
             _logger.info(
                 "[POS MCC][RECEIPT] Exported company_id data for order %s: %s (ID: %d)",
-                order.name if order else 'N/A',
+                order_sudo.name if order_sudo else 'N/A',
                 company.name,
                 company.id
             )
         else:
-            _logger.warning("[POS MCC][RECEIPT] Order %s has no company_id", order.name if order else 'N/A')
+            _logger.warning("[POS MCC][RECEIPT] Order %s has no company_id", order_sudo.name if order_sudo else 'N/A')
         
         # Export computed fields for receipt template
         # Force computation if not already computed
-        if order:
+        if order_sudo:
             try:
                 # CRITICAL: Compute is_fiscal_order first (it's needed for QR computation)
-                # Use sudo to avoid access errors when computing across companies
-                order.sudo()._compute_is_fiscal_order()
+                # Already using sudo via order_sudo
+                order_sudo._compute_is_fiscal_order()
                 # Now compute QR data (depends on is_fiscal_order)
-                order.sudo()._compute_non_fiscal_qr_data()
+                order_sudo._compute_non_fiscal_qr_data()
                 
                 # Read the computed values
-                result['is_fiscal_order'] = order.is_fiscal_order
-                result['non_fiscal_qr_data'] = order.non_fiscal_qr_data if order.non_fiscal_qr_data else False
+                result['is_fiscal_order'] = order_sudo.is_fiscal_order
+                result['non_fiscal_qr_data'] = order_sudo.non_fiscal_qr_data if order_sudo.non_fiscal_qr_data else False
                 
                 _logger.info(
                     "[POS MCC][RECEIPT] Exported computed fields for order %s: is_fiscal_order=%s, has_qr=%s, company_id=%s",
-                    order.name,
-                    order.is_fiscal_order,
-                    bool(order.non_fiscal_qr_data),
-                    order.company_id.id if order.company_id else 'None'
+                    order_sudo.name,
+                    order_sudo.is_fiscal_order,
+                    bool(order_sudo.non_fiscal_qr_data),
+                    order_sudo.company_id.id if order_sudo.company_id else 'None'
                 )
             except Exception as e:
-                _logger.error("[POS MCC][RECEIPT] Error computing fields for order %s: %s", order.name, str(e))
+                _logger.error("[POS MCC][RECEIPT] Error computing fields for order %s: %s", order_sudo.name, str(e))
                 result['is_fiscal_order'] = False
                 result['non_fiscal_qr_data'] = False
         

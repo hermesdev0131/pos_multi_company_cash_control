@@ -4,7 +4,7 @@
     'name': 'POS Multi-Company Cash Control',
     'version': '18.0.1.0.0',
     'category': 'Point of Sale',
-    'summary': 'Dynamic fiscal/non-fiscal company switching for cash payments in POS',
+    'summary': 'Dynamic fiscal/non-fiscal company switching for cash payments in POS #1',
     'description': """
 POS Multi-Company Cash Control
 ===============================
