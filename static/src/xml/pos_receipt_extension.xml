@@ -1,82 +1,72 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates id="template" xml:space="preserve">
-    <!-- Extension of POS receipt template for multi-company cash control -->
-    
-    <!-- Override receipt to use order's company instead of session's company -->
-    <t t-inherit="point_of_sale.OrderReceipt" t-inherit-mode="extension" owl="1">
-        <!-- Replace company logo with order's company logo -->
-        <xpath expr="//img[@t-att-src='receipt.company.logo']" position="replace">
-            <img t-if="order.company and order.company.logo" 
-                 t-att-src="order.company.logo" 
-                 alt="Company Logo" 
-                 class="receipt-company-logo"/>
-            <img t-else="" 
-                 t-att-src="receipt.company.logo" 
-                 alt="Company Logo" 
-                 class="receipt-company-logo"/>
+    <!--
+        POS Multi-Company Cash Control: Receipt Extension
+
+        This template extends the standard POS receipt to:
+        1. Display the order's assigned company information (fiscal or non-fiscal)
+           instead of the session company
+        2. Add a QR code on non-fiscal receipts only
+
+        Business Rules:
+        - Fiscal receipts: Show fiscal company info (no QR - fiscal printer adds its own)
+        - Non-fiscal receipts: Show non-fiscal company info + custom QR code
+    -->
+
+    <t t-name="pos_multi_company_cash_control.OrderReceipt"
+       t-inherit="point_of_sale.OrderReceipt"
+       t-inherit-mode="extension"
+       owl="1">
+
+        <!-- Override company name in header -->
+        <xpath expr="//div[hasclass('pos-receipt-company')]//h2" position="replace">
+            <h2><t t-esc="order.company_id.name"/></h2>
         </xpath>
-        
-        <!-- Replace company name with order's company name -->
-        <xpath expr="//div[@t-esc='receipt.company.name']" position="replace">
-            <div t-if="order.company" t-esc="order.company.name" class="receipt-company-name"/>
-            <div t-else="" t-esc="receipt.company.name" class="receipt-company-name"/>
+
+        <!-- Override company contact information -->
+        <xpath expr="//div[hasclass('pos-receipt-contact')]" position="replace">
+            <div class="pos-receipt-contact">
+                <t t-if="order.company_id.street">
+                    <div><t t-esc="order.company_id.street"/></div>
+                </t>
+                <t t-if="order.company_id.street2">
+                    <div><t t-esc="order.company_id.street2"/></div>
+                </t>
+                <t t-if="order.company_id.city or order.company_id.zip">
+                    <div>
+                        <t t-if="order.company_id.zip"><t t-esc="order.company_id.zip"/> </t>
+                        <t t-if="order.company_id.city"><t t-esc="order.company_id.city"/></t>
+                    </div>
+                </t>
+                <t t-if="order.company_id.state_id">
+                    <div><t t-esc="order.company_id.state_id.name"/></div>
+                </t>
+                <t t-if="order.company_id.country_id">
+                    <div><t t-esc="order.company_id.country_id.name"/></div>
+                </t>
+                <t t-if="order.company_id.vat">
+                    <div>VAT: <t t-esc="order.company_id.vat"/></div>
+                </t>
+                <t t-if="order.company_id.phone">
+                    <div>Tel: <t t-esc="order.company_id.phone"/></div>
+                </t>
+                <t t-if="order.company_id.email">
+                    <div>Email: <t t-esc="order.company_id.email"/></div>
+                </t>
+            </div>
         </xpath>
-        
-        <!-- Replace company address with order's company address -->
-        <xpath expr="//div[@t-esc='receipt.company.street']" position="replace">
-            <div t-if="order.company and order.company.street" 
-                 t-esc="order.company.street" 
-                 class="receipt-company-street"/>
-            <div t-else="" 
-                 t-esc="receipt.company.street" 
-                 class="receipt-company-street"/>
-        </xpath>
-        
-        <xpath expr="//div[@t-esc='receipt.company.city']" position="replace">
-            <div t-if="order.company and order.company.city" 
-                 t-esc="order.company.city" 
-                 class="receipt-company-city"/>
-            <div t-else="" 
-                 t-esc="receipt.company.city" 
-                 class="receipt-company-city"/>
-        </xpath>
-        
-        <!-- Replace company contact info with order's company contact info -->
-        <xpath expr="//div[@t-esc='receipt.company.phone']" position="replace">
-            <div t-if="order.company and order.company.phone" 
-                 t-esc="order.company.phone" 
-                 class="receipt-company-phone"/>
-            <div t-else="" 
-                 t-esc="receipt.company.phone" 
-                 class="receipt-company-phone"/>
-        </xpath>
-        
-        <xpath expr="//div[@t-esc='receipt.company.email']" position="replace">
-            <div t-if="order.company and order.company.email" 
-                 t-esc="order.company.email" 
-                 class="receipt-company-email"/>
-            <div t-else="" 
-                 t-esc="receipt.company.email" 
-                 class="receipt-company-email"/>
-        </xpath>
-        
-        <!-- Replace company VAT with order's company VAT -->
-        <xpath expr="//div[@t-esc='receipt.company.vat']" position="replace">
-            <div t-if="order.company and order.company.vat" 
-                 t-esc="order.company.vat" 
-                 class="receipt-company-vat"/>
-            <div t-else="" 
-                 t-esc="receipt.company.vat" 
-                 class="receipt-company-vat"/>
-        </xpath>
-        
-        <!-- Optional: Add notice if order company differs from session company -->
-        <xpath expr="//div[@class='receipt-order']" position="after">
-            <t t-if="order.company and receipt.company and order.company.id !== receipt.company.id">
-                <div class="receipt-company-notice" style="margin-top: 10px; padding: 5px; border-top: 1px solid #ccc;">
-                    <p style="font-size: 10px; color: #666;">
-                        <t t-esc="'Issued by: ' + order.company.name"/>
-                    </p>
+
+        <!-- Add QR code section ONLY for non-fiscal orders -->
+        <xpath expr="//div[hasclass('pos-receipt-amount-change')]" position="after">
+            <!-- Check if order is NON-FISCAL -->
+            <t t-if="!order.is_fiscal_order and order.non_fiscal_qr_data">
+                <div class="non-fiscal-qr-section" style="text-align: center; margin-top: 20px; padding: 10px 0; border-top: 1px dashed #000;">
+                    <div class="qr-label" style="font-size: 12px; margin-bottom: 10px; font-weight: bold;">
+                        Non-Fiscal Transaction
+                    </div>
+                    <!-- QR Code image generated from backend -->
+                    <img t-att-src="'data:image/png;base64,' + order.non_fiscal_qr_data"
+                         style="width: 150px; height: 150px; margin: 0 auto; display: block;"/>
                 </div>
             </t>
         </xpath>

@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import qrcode
+import base64
+from io import BytesIO
 from datetime import datetime
 from pytz import UTC, timezone
 from odoo import api, fields, models
@@ -34,6 +37,12 @@ class PosOrder(models.Model):
         compute='_compute_is_fiscal_order',
         search='_search_is_fiscal_order',
         help='True if this order was assigned to the fiscal company'
+    )
+
+    non_fiscal_qr_data = fields.Char(
+        string='Non-Fiscal QR Data',
+        compute='_compute_non_fiscal_qr_data',
+        help='Base64-encoded QR code image for non-fiscal receipts'
     )
 
     @api.depends('company_id')
@@ -81,6 +90,46 @@ class PosOrder(models.Model):
         else:
             # Search for orders NOT in fiscal companies
             return [('company_id', 'not in', fiscal_company_ids)]
+
+    @api.depends('is_fiscal_order', 'name', 'company_id', 'date_order')
+    def _compute_non_fiscal_qr_data(self):
+        """
+        Generate QR code for non-fiscal orders.
+
+        QR code contains: Order reference | Company name | Timestamp
+        Only generated for non-fiscal orders (fiscal orders get False).
+        """
+        for order in self:
+            if order.is_fiscal_order:
+                # Fiscal orders don't get QR codes
+                order.non_fiscal_qr_data = False
+            else:
+                # Non-fiscal orders get a QR code
+                try:
+                    # Build QR content
+                    qr_content = f"{order.name}|{order.company_id.name}|{order.date_order}"
+
+                    # Generate QR code image
+                    qr = qrcode.QRCode(
+                        version=1,
+                        error_correction=qrcode.constants.ERROR_CORRECT_L,
+                        box_size=10,
+                        border=4
+                    )
+                    qr.add_data(qr_content)
+                    qr.make(fit=True)
+
+                    img = qr.make_image(fill_color="black", back_color="white")
+
+                    # Convert to base64
+                    buffer = BytesIO()
+                    img.save(buffer, format='PNG')
+                    img_str = base64.b64encode(buffer.getvalue()).decode()
+
+                    order.non_fiscal_qr_data = img_str
+                except Exception as e:
+                    _logger.error(f"[POS MCC][QR] Failed to generate QR code for order {order.name}: {str(e)}")
+                    order.non_fiscal_qr_data = False
 
     def _order_fields(self, ui_order):
         """
@@ -278,56 +327,6 @@ class PosOrder(models.Model):
             return super(PosOrder, self.sudo()).read_pos_data(config_id, data_type)
 
         return super().read_pos_data(config_id, data_type)
-
-    def _export_for_ui(self, order):
-        """
-        Override to include order's company information in the exported data.
-        
-        This ensures the receipt template can access the order's company
-        (fiscal or non-fiscal) instead of the session's company.
-        
-        Args:
-            order: The pos.order record to export
-            
-        Returns:
-            dict: Order data with company information included
-        """
-        result = super()._export_for_ui(order)
-        
-        # Add order's company information for receipt rendering
-        if order.company_id:
-            company = order.company_id
-            # Logo is already base64 encoded string in Odoo, use it directly
-            logo_data = company.logo if company.logo else False
-            
-            result['company'] = {
-                'id': company.id,
-                'name': company.name,
-                'logo': logo_data,
-                'phone': company.phone or '',
-                'email': company.email or '',
-                'website': company.website or '',
-                'street': company.street or '',
-                'street2': company.street2 or '',
-                'city': company.city or '',
-                'state_id': company.state_id.id if company.state_id else False,
-                'state_name': company.state_id.name if company.state_id else '',
-                'zip': company.zip or '',
-                'country_id': company.country_id.id if company.country_id else False,
-                'country_name': company.country_id.name if company.country_id else '',
-                'vat': company.vat or '',
-                'company_registry': company.company_registry or '',
-            }
-            _logger.debug(
-                "[POS MCC][RECEIPT] Exported company data for order %s: %s (ID: %d)",
-                order.name,
-                company.name,
-                company.id
-            )
-        else:
-            _logger.warning("[POS MCC][RECEIPT] Order %s has no company_id", order.name)
-        
-        return result
 
     def _complete_values_from_session(self, session, values):
         """
