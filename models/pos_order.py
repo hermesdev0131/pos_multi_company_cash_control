@@ -352,73 +352,106 @@ class PosOrder(models.Model):
             # Use sudo to read orders across all companies
             result = super(PosOrder, self.sudo()).read_pos_data(config_id, data_type)
             
-            _logger.info("[POS MCC][COMPANY] read_pos_data result type: %s, keys: %s",
-                        type(result).__name__,
-                        list(result.keys()) if isinstance(result, dict) else 'N/A')
+            _logger.info("[POS MCC][COMPANY] read_pos_data result type: %s",
+                        type(result).__name__)
             
-            # CRITICAL: Enhance the result with our custom fields and company data
-            # The result structure varies - could be dict with 'orders' key, or list of orders
-            orders_data = None
-            if isinstance(result, dict):
-                # Try different possible keys
-                if 'orders' in result:
-                    orders_data = result['orders']
-                elif 'data' in result and isinstance(result['data'], list):
-                    orders_data = result['data']
-                elif len(result) > 0 and isinstance(list(result.values())[0], list):
-                    orders_data = list(result.values())[0]
-            elif isinstance(result, list):
-                orders_data = result
+            # CRITICAL: Do NOT modify the result structure - it must match what frontend expects
+            # The frontend's sanitizeData() expects specific data formats and modifying them breaks it.
+            # Only enhance individual order records if they exist in the expected structure.
+            # 
+            # IMPORTANT: We only enhance orders, we never modify the top-level structure.
+            # If enhancement fails, we return the original result unchanged.
             
-            if orders_data:
-                _logger.info("[POS MCC][COMPANY] Processing %d orders in read_pos_data", len(orders_data))
-                for order_data in orders_data:
-                    if isinstance(order_data, dict):
-                        order_id = order_data.get('id') or order_data.get('order_id')
-                        if order_id:
-                            try:
-                                # Get the order record with sudo to avoid access errors
-                                order = self.env['pos.order'].sudo().browse(order_id)
-                                if order.exists():
-                                    # Add company_id_data with all related fields (separate from company_id tuple)
-                                    if order.company_id:
-                                        company = order.company_id.sudo()
-                                        order_data['company_id_data'] = {
-                                            'id': company.id,
-                                            'name': company.name,
-                                            'logo': company.logo if company.logo else False,
-                                            'phone': company.phone or '',
-                                            'email': company.email or '',
-                                            'street': company.street or '',
-                                            'street2': company.street2 or '',
-                                            'city': company.city or '',
-                                            'zip': company.zip or '',
-                                            'state_name': company.state_id.name if company.state_id else '',
-                                            'country_name': company.country_id.name if company.country_id else '',
-                                            'vat': company.vat or '',
-                                        }
-                                    
-                                    # Compute and add our custom fields
-                                    order._compute_is_fiscal_order()
-                                    order._compute_non_fiscal_qr_data()
-                                    
-                                    order_data['is_fiscal_order'] = order.is_fiscal_order
-                                    order_data['non_fiscal_qr_data'] = order.non_fiscal_qr_data if order.non_fiscal_qr_data else False
-                                    
-                                    _logger.info(
-                                        "[POS MCC][RECEIPT] Enhanced order %s in read_pos_data: company=%s (ID: %s), is_fiscal=%s, has_qr=%s",
-                                        order.name,
-                                        company.name if order.company_id else 'None',
-                                        order.company_id.id if order.company_id else 'None',
-                                        order.is_fiscal_order,
-                                        bool(order.non_fiscal_qr_data)
-                                    )
-                            except Exception as e:
-                                _logger.error("[POS MCC][RECEIPT] Error enhancing order %s: %s", order_id, str(e))
+            try:
+                # Safely find and enhance orders without breaking the structure
+                if isinstance(result, dict):
+                    # Check for common keys that might contain orders
+                    for key in ['orders', 'data', 'order_ids']:
+                        if key in result:
+                            orders_list = result[key]
+                            # CRITICAL: Ensure it's a list before processing
+                            if isinstance(orders_list, list):
+                                _logger.info("[POS MCC][COMPANY] Found %d orders in key '%s'", len(orders_list), key)
+                                for order_data in orders_list:
+                                    if isinstance(order_data, dict):
+                                        self._enhance_order_data_for_receipt(order_data)
+                                break
+                            else:
+                                _logger.warning("[POS MCC][COMPANY] Key '%s' exists but is not a list: %s", key, type(orders_list).__name__)
+                elif isinstance(result, list):
+                    # Result is directly a list of orders
+                    _logger.info("[POS MCC][COMPANY] Result is list with %d items", len(result))
+                    for item in result:
+                        if isinstance(item, dict):
+                            self._enhance_order_data_for_receipt(item)
+                else:
+                    _logger.warning("[POS MCC][COMPANY] Unexpected result type: %s", type(result).__name__)
+            except Exception as e:
+                _logger.error("[POS MCC][RECEIPT] Error enhancing read_pos_data result: %s", str(e))
+                # CRITICAL: Return original result unchanged if enhancement fails
+                # This ensures the frontend doesn't break
             
             return result
 
         return super().read_pos_data(config_id, data_type)
+
+    def _enhance_order_data_for_receipt(self, order_data):
+        """
+        Helper method to enhance a single order data dictionary with company info and computed fields.
+        
+        CRITICAL: This method only ADDS fields, never modifies existing ones.
+        It preserves the original data structure to avoid breaking frontend expectations.
+        
+        Args:
+            order_data (dict): Order data dictionary to enhance
+        """
+        order_id = order_data.get('id') or order_data.get('order_id')
+        if not order_id:
+            return
+        
+        try:
+            # Get the order record with sudo to avoid access errors
+            order = self.env['pos.order'].sudo().browse(order_id)
+            if not order.exists():
+                return
+            
+            # CRITICAL: Do NOT modify company_id - it must remain as [id, name] tuple for frontend
+            # Instead, ADD company_id_data as a separate field with full company info
+            if order.company_id:
+                company = order.company_id.sudo()
+                # Add as separate field to avoid breaking frontend expectations
+                order_data['company_id_data'] = {
+                    'id': company.id,
+                    'name': company.name,
+                    'logo': company.logo if company.logo else False,
+                    'phone': company.phone or '',
+                    'email': company.email or '',
+                    'street': company.street or '',
+                    'street2': company.street2 or '',
+                    'city': company.city or '',
+                    'zip': company.zip or '',
+                    'state_name': company.state_id.name if company.state_id else '',
+                    'country_name': company.country_id.name if company.country_id else '',
+                    'vat': company.vat or '',
+                }
+            
+            # Compute and add our custom fields (only if not already present)
+            if 'is_fiscal_order' not in order_data or 'non_fiscal_qr_data' not in order_data:
+                order._compute_is_fiscal_order()
+                order._compute_non_fiscal_qr_data()
+                
+                order_data['is_fiscal_order'] = order.is_fiscal_order
+                order_data['non_fiscal_qr_data'] = order.non_fiscal_qr_data if order.non_fiscal_qr_data else False
+                
+                _logger.debug(
+                    "[POS MCC][RECEIPT] Enhanced order %s: company=%s, is_fiscal=%s, has_qr=%s",
+                    order.name,
+                    company.name if order.company_id else 'None',
+                    order.is_fiscal_order,
+                    bool(order.non_fiscal_qr_data)
+                )
+        except Exception as e:
+            _logger.error("[POS MCC][RECEIPT] Error enhancing order %s: %s", order_id, str(e))
 
     def _export_for_ui(self, order):
         """
@@ -624,58 +657,15 @@ class PosOrder(models.Model):
         
         return result
 
-    def read(self, fields=None, load='_classic_read'):
-        """
-        Override read() to ensure company_id and computed fields are included.
-        
-        CRITICAL: When POS reads order data, it uses read(). We need to ensure
-        our custom fields and company data are included in the result.
-        
-        NOTE: Many2one fields in read() return [id, name] tuples, but we also
-        add a separate 'company_id_data' field with full company information
-        for the receipt template.
-        """
-        result = super().read(fields, load)
-        
-        # Enhance each record with company data and computed fields
-        for record in result:
-            order_id = record.get('id')
-            if not order_id:
-                continue
-                
-            try:
-                order = self.browse(order_id).sudo()
-                
-                # Add full company data as a separate field for template access
-                if order.company_id:
-                    company = order.company_id.sudo()
-                    record['company_id_data'] = {
-                        'id': company.id,
-                        'name': company.name,
-                        'logo': company.logo if company.logo else False,
-                        'phone': company.phone or '',
-                        'email': company.email or '',
-                        'street': company.street or '',
-                        'street2': company.street2 or '',
-                        'city': company.city or '',
-                        'zip': company.zip or '',
-                        'state_name': company.state_id.name if company.state_id else '',
-                        'country_name': company.country_id.name if company.country_id else '',
-                        'vat': company.vat or '',
-                    }
-                    _logger.debug("[POS MCC][RECEIPT] Added company_id_data for order %s", order.name)
-                
-                # Compute and add computed fields
-                order._compute_is_fiscal_order()
-                order._compute_non_fiscal_qr_data()
-                
-                record['is_fiscal_order'] = order.is_fiscal_order
-                record['non_fiscal_qr_data'] = order.non_fiscal_qr_data if order.non_fiscal_qr_data else False
-                
-            except Exception as e:
-                _logger.error("[POS MCC][RECEIPT] Error enhancing order %s in read(): %s", order_id, str(e))
-        
-        return result
+    # NOTE: read() override removed to avoid breaking frontend data structure
+    # The frontend's sanitizeData() expects specific data formats and modifying
+    # the read() result can cause "Cannot read properties of undefined" errors.
+    # Instead, we rely on read_pos_data() and _enhance_order_data_for_receipt() to add our fields.
+    # 
+    # If receipt template needs company data, it should access it via:
+    # - order.company_id_data (added in read_pos_data)
+    # - order.is_fiscal_order (added in read_pos_data)  
+    # - order.non_fiscal_qr_data (added in read_pos_data)
 
     def _complete_values_from_session(self, session, values):
         """
