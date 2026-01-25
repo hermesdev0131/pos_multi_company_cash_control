@@ -52,8 +52,10 @@ class PosOrder(models.Model):
 
         An order is considered fiscal if its company matches the fiscal_company_id
         of any active rule for the order's POS config.
+
+        CRITICAL: Uses sudo() to avoid access errors when computing across companies.
         """
-        for order in self:
+        for order in self.sudo():
             order.is_fiscal_order = False
 
             if not order.config_id:
@@ -98,8 +100,10 @@ class PosOrder(models.Model):
 
         QR code contains: Order reference | Company name | Timestamp
         Only generated for non-fiscal orders (fiscal orders get False).
+
+        CRITICAL: Uses sudo() to avoid access errors when computing across companies.
         """
-        for order in self:
+        for order in self.sudo():
             if order.is_fiscal_order:
                 # Fiscal orders don't get QR codes
                 order.non_fiscal_qr_data = False
