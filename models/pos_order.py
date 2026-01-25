@@ -344,19 +344,34 @@ class PosOrder(models.Model):
 
         Without this, the receipt template cannot access these fields.
         """
-        # Get parent fields (might be None or list)
-        parent_fields = super()._load_pos_data_fields(config_id)
+        # Try to get parent fields safely
+        try:
+            parent_fields = super()._load_pos_data_fields(config_id)
+        except AttributeError:
+            # Parent doesn't have this method, start with default POS order fields
+            parent_fields = [
+                'id', 'name', 'date_order', 'user_id', 'amount_total', 'amount_tax',
+                'amount_paid', 'amount_return', 'lines', 'payment_ids', 'partner_id',
+                'session_id', 'config_id', 'sequence_number', 'creation_date', 'fiscal_position_id',
+                'table_id', 'customer_count', 'takeaway', 'state', 'account_move', 'company_id',
+                'pricelist_id', 'note', 'nb_print', 'pos_reference', 'sale_journal', 'is_invoiced',
+                'is_tipped', 'tip_amount', 'access_token', 'last_order_preparation_change',
+                'tracking_number', 'shipping_date'
+            ]
 
-        # Initialize fields list if parent returns None
+        # Initialize fields list
         if parent_fields is None:
             fields = []
         elif isinstance(parent_fields, list):
-            fields = parent_fields
+            fields = list(parent_fields)
         else:
             fields = list(parent_fields) if parent_fields else []
 
-        # Add our custom computed fields
-        fields += ['is_fiscal_order', 'non_fiscal_qr_data']
+        # Add our custom computed fields if not already present
+        if 'is_fiscal_order' not in fields:
+            fields.append('is_fiscal_order')
+        if 'non_fiscal_qr_data' not in fields:
+            fields.append('non_fiscal_qr_data')
 
         _logger.debug("[POS MCC][COMPANY] Loading POS data fields: %s", fields)
         return fields
