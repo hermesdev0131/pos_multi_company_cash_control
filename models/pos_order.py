@@ -95,7 +95,7 @@ class PosOrder(models.Model):
             # Search for orders NOT in fiscal companies
             return [('company_id', 'not in', fiscal_company_ids)]
 
-    @api.depends('is_fiscal_order', 'name', 'company_id', 'date_order')
+    @api.depends('company_id', 'config_id', 'name', 'date_order')
     def _compute_non_fiscal_qr_data(self):
         """
         Generate QR code for non-fiscal orders.
@@ -106,7 +106,17 @@ class PosOrder(models.Model):
         CRITICAL: Uses sudo() to avoid access errors when computing across companies.
         """
         for order in self.sudo():
-            if order.is_fiscal_order:
+            # Determine if fiscal order directly (don't depend on is_fiscal_order field)
+            is_fiscal = False
+            if order.config_id:
+                rule = self.env['pos.cash.company.rule'].sudo().search([
+                    ('pos_config_id', '=', order.config_id.id),
+                    ('active', '=', True)
+                ], limit=1, order='sequence')
+                if rule and rule.fiscal_company_id:
+                    is_fiscal = (order.company_id.id == rule.fiscal_company_id.id)
+
+            if is_fiscal:
                 # Fiscal orders don't get QR codes
                 order.non_fiscal_qr_data = False
             else:
@@ -333,48 +343,6 @@ class PosOrder(models.Model):
             return super(PosOrder, self.sudo()).read_pos_data(config_id, data_type)
 
         return super().read_pos_data(config_id, data_type)
-
-    @api.model
-    def _load_pos_data_fields(self, config_id):
-        """
-        Specify which fields to load for POS frontend.
-
-        CRITICAL: This ensures our computed fields (is_fiscal_order, non_fiscal_qr_data)
-        are included in the data sent to the POS frontend for receipt rendering.
-
-        Without this, the receipt template cannot access these fields.
-        """
-        # Try to get parent fields safely
-        try:
-            parent_fields = super()._load_pos_data_fields(config_id)
-        except AttributeError:
-            # Parent doesn't have this method, start with default POS order fields
-            parent_fields = [
-                'id', 'name', 'date_order', 'user_id', 'amount_total', 'amount_tax',
-                'amount_paid', 'amount_return', 'lines', 'payment_ids', 'partner_id',
-                'session_id', 'config_id', 'sequence_number', 'creation_date', 'fiscal_position_id',
-                'table_id', 'customer_count', 'takeaway', 'state', 'account_move', 'company_id',
-                'pricelist_id', 'note', 'nb_print', 'pos_reference', 'sale_journal', 'is_invoiced',
-                'is_tipped', 'tip_amount', 'access_token', 'last_order_preparation_change',
-                'tracking_number', 'shipping_date'
-            ]
-
-        # Initialize fields list
-        if parent_fields is None:
-            fields = []
-        elif isinstance(parent_fields, list):
-            fields = list(parent_fields)
-        else:
-            fields = list(parent_fields) if parent_fields else []
-
-        # Add our custom computed fields if not already present
-        if 'is_fiscal_order' not in fields:
-            fields.append('is_fiscal_order')
-        if 'non_fiscal_qr_data' not in fields:
-            fields.append('non_fiscal_qr_data')
-
-        _logger.debug("[POS MCC][COMPANY] Loading POS data fields: %s", fields)
-        return fields
 
     def _complete_values_from_session(self, session, values):
         """
