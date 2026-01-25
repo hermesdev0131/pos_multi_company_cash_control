@@ -4,7 +4,7 @@
     'name': 'POS Multi-Company Cash Control',
     'version': '18.0.1.0.0',
     'category': 'Point of Sale',
-    'summary': 'Dynamic fiscal/non-fiscal company switching for cash payments in POS #3',
+    'summary': 'Dynamic fiscal/non-fiscal company switching for cash payments in POS #5',
     'description': """
 POS Multi-Company Cash Control
 ===============================
@@ -42,6 +42,7 @@ Future Enhancements:
     ],
     'assets': {
         'point_of_sale.assets': [
+            'pos_multi_company_cash_control/static/src/js/pos_receipt_patch.js',
             'pos_multi_company_cash_control/static/src/xml/pos_receipt_extension.xml',
         ],
         'web.assets_backend': [
