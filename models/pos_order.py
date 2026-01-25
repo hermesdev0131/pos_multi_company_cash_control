@@ -35,6 +35,7 @@ class PosOrder(models.Model):
     is_fiscal_order = fields.Boolean(
         string='Is Fiscal Order',
         compute='_compute_is_fiscal_order',
+        store=True,
         search='_search_is_fiscal_order',
         help='True if this order was assigned to the fiscal company'
     )
@@ -42,6 +43,7 @@ class PosOrder(models.Model):
     non_fiscal_qr_data = fields.Char(
         string='Non-Fiscal QR Data',
         compute='_compute_non_fiscal_qr_data',
+        store=True,
         help='Base64-encoded QR code image for non-fiscal receipts'
     )
 
@@ -342,8 +344,20 @@ class PosOrder(models.Model):
 
         Without this, the receipt template cannot access these fields.
         """
-        fields = super()._load_pos_data_fields(config_id)
-        fields.extend(['is_fiscal_order', 'non_fiscal_qr_data'])
+        # Get parent fields (might be None or list)
+        parent_fields = super()._load_pos_data_fields(config_id)
+
+        # Initialize fields list if parent returns None
+        if parent_fields is None:
+            fields = []
+        elif isinstance(parent_fields, list):
+            fields = parent_fields
+        else:
+            fields = list(parent_fields) if parent_fields else []
+
+        # Add our custom computed fields
+        fields += ['is_fiscal_order', 'non_fiscal_qr_data']
+
         _logger.debug("[POS MCC][COMPANY] Loading POS data fields: %s", fields)
         return fields
 
