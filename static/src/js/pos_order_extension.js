@@ -35,9 +35,6 @@ patch(PosOrder.prototype, {
         // Use order_company_data (stored JSON field) for receipt company info
         if (this.order_company_data && result.headerData) {
             result.headerData.company = this.order_company_data;
-            console.log('[POS MCC] Using order company:', this.order_company_data.name);
-        } else {
-            console.log('[POS MCC] No order_company_data, using session company');
         }
 
         // Add custom fields for receipt logic (QR code display)

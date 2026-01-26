@@ -17,13 +17,25 @@
        t-inherit-mode="extension"
        owl="1">
 
+        <!-- Add custom styles for receipt adjustments -->
+        <xpath expr="//div[hasclass('pos-receipt')]" position="before">
+            <style>
+                .pos-receipt .pos-receipt-logo img {
+                    max-width: 50px !important;
+                    max-height: 50px !important;
+                    width: auto !important;
+                    height: auto !important;
+                }
+            </style>
+        </xpath>
+
         <!-- Add QR code section for non-fiscal orders at the end of receipt -->
         <xpath expr="//div[hasclass('pos-receipt')]" position="inside">
             <t t-if="!props.data.is_fiscal_order and props.data.non_fiscal_qr_data">
                 <div class="non-fiscal-qr-section" style="text-align: center; margin-top: 20px; padding: 10px 0; border-top: 1px dashed #000;">
-                    <!-- <div style="font-size: 12px; margin-bottom: 10px; font-weight: bold;">
+                    <div style="font-size: 12px; margin-bottom: 10px; font-weight: bold;">
                         Non-Fiscal Transaction
-                    </div> -->
+                    </div>
                     <img t-att-src="'data:image/png;base64,' + props.data.non_fiscal_qr_data"
                          style="width: 150px; height: 150px; margin: 0 auto; display: block;"
                          alt="Non-fiscal QR Code"/>
