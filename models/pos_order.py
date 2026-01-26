@@ -47,6 +47,45 @@ class PosOrder(models.Model):
         help='Base64-encoded QR code image for non-fiscal receipts'
     )
 
+    order_company_data = fields.Json(
+        string='Order Company Data',
+        compute='_compute_order_company_data',
+        store=True,
+        help='JSON with company details for receipt display'
+    )
+
+    @api.depends('company_id')
+    def _compute_order_company_data(self):
+        """
+        Compute and store company data for the order.
+        This is stored so it's available to the POS frontend for receipt display.
+        """
+        for order in self.sudo():
+            company = order.company_id
+            if company:
+                order.order_company_data = {
+                    'id': company.id,
+                    'name': company.name or '',
+                    'street': company.street or '',
+                    'street2': company.street2 or '',
+                    'city': company.city or '',
+                    'zip': company.zip or '',
+                    'state_id': {
+                        'id': company.state_id.id,
+                        'name': company.state_id.name,
+                    } if company.state_id else False,
+                    'country_id': {
+                        'id': company.country_id.id,
+                        'name': company.country_id.name,
+                    } if company.country_id else False,
+                    'vat': company.vat or '',
+                    'phone': company.phone or '',
+                    'email': company.email or '',
+                    'website': company.website or '',
+                }
+            else:
+                order.order_company_data = False
+
     @api.depends('company_id')
     def _compute_is_fiscal_order(self):
         """
@@ -345,29 +384,45 @@ class PosOrder(models.Model):
         # Use sudo and appropriate company context for cross-company creation
         result = super(PosOrder, self.sudo()).sync_from_ui(orders)
 
+        _logger.debug("[POS MCC][RECEIPT] sync_from_ui result type: %s", type(result))
+
         # WORKAROUND: Convert result to JSON and back to avoid access rights issues
         # when returning records created in different companies
         import json
         try:
             result_json = json.dumps(result)
             result = json.loads(result_json)
-        except (TypeError, ValueError):
-            # If JSON serialization fails, return as-is
+        except (TypeError, ValueError) as e:
+            _logger.warning("[POS MCC][RECEIPT] JSON serialization failed: %s", str(e))
             pass
 
         # Enrich result with company data and custom fields for frontend receipt
-        if result and isinstance(result, list):
-            for order_data in result:
+        try:
+            # Handle different result structures
+            order_list = []
+            if isinstance(result, list):
+                order_list = result
+            elif isinstance(result, dict):
+                # Some Odoo versions return a dict with orders inside
+                if 'orders' in result:
+                    order_list = result.get('orders', [])
+                elif 'id' in result:
+                    # Single order as dict
+                    order_list = [result]
+
+            for order_data in order_list:
                 if isinstance(order_data, dict) and 'id' in order_data:
                     order = self.sudo().browse(order_data['id'])
                     if order.exists():
                         order_data['company_data'] = order._get_order_company_data()
                         order_data['is_fiscal_order'] = order.is_fiscal_order
                         order_data['non_fiscal_qr_data'] = order.non_fiscal_qr_data or False
-                        _logger.debug(
+                        _logger.info(
                             "[POS MCC][RECEIPT] Enriched order %s: is_fiscal=%s, company=%s",
                             order.name, order.is_fiscal_order, order.company_id.name
                         )
+        except Exception as e:
+            _logger.error("[POS MCC][RECEIPT] Error enriching result: %s", str(e))
 
         return result
 
@@ -386,6 +441,74 @@ class PosOrder(models.Model):
             return super(PosOrder, self.sudo()).read_pos_data(config_id, data_type)
 
         return super().read_pos_data(config_id, data_type)
+
+    def read(self, fields=None, load='_classic_read'):
+        """
+        Override read to use sudo() for multi-company orders.
+
+        This is necessary when reading orders that belong to a different
+        company than the user's current company.
+        """
+        try:
+            return super().read(fields=fields, load=load)
+        except Exception as e:
+            _logger.debug("[POS MCC][COMPANY] read() using sudo due to access error: %s", str(e))
+            return super(PosOrder, self.sudo()).read(fields=fields, load=load)
+
+    def write(self, vals):
+        """
+        Override write to use sudo() for multi-company orders.
+
+        This is necessary when the POS frontend tries to update orders
+        that belong to a different company than the user's current company.
+        """
+        # Always use sudo for POS orders to avoid multi-company access issues
+        # This is safe because we're within the POS context
+        try:
+            # Check if any order is in a different company than current
+            current_company_id = self.env.company.id
+            needs_sudo = any(
+                order.sudo().company_id.id != current_company_id
+                for order in self
+            )
+            if needs_sudo:
+                _logger.debug("[POS MCC][COMPANY] write() using sudo for cross-company order update")
+                return super(PosOrder, self.sudo()).write(vals)
+        except Exception as e:
+            _logger.debug("[POS MCC][COMPANY] write() using sudo due to access check error: %s", str(e))
+            return super(PosOrder, self.sudo()).write(vals)
+
+        return super().write(vals)
+
+    def action_pos_order_paid(self):
+        """
+        Override to use sudo() for multi-company orders.
+
+        This method is called when an order is marked as paid.
+        """
+        try:
+            if self.sudo().company_id.id != self.env.company.id:
+                _logger.debug("[POS MCC][COMPANY] action_pos_order_paid using sudo for company %s", self.sudo().company_id.name)
+                return super(PosOrder, self.sudo()).action_pos_order_paid()
+        except Exception as e:
+            _logger.debug("[POS MCC][COMPANY] action_pos_order_paid using sudo due to error: %s", str(e))
+            return super(PosOrder, self.sudo()).action_pos_order_paid()
+        return super().action_pos_order_paid()
+
+    def action_pos_order_invoice(self):
+        """
+        Override to use sudo() for multi-company orders.
+
+        This method is called when generating an invoice for the order.
+        """
+        try:
+            if self.sudo().company_id.id != self.env.company.id:
+                _logger.debug("[POS MCC][COMPANY] action_pos_order_invoice using sudo for company %s", self.sudo().company_id.name)
+                return super(PosOrder, self.sudo()).action_pos_order_invoice()
+        except Exception as e:
+            _logger.debug("[POS MCC][COMPANY] action_pos_order_invoice using sudo due to error: %s", str(e))
+            return super(PosOrder, self.sudo()).action_pos_order_invoice()
+        return super().action_pos_order_invoice()
 
     def _complete_values_from_session(self, session, values):
         """

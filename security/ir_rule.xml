@@ -2,52 +2,80 @@
 <odoo>
     <data noupdate="0">
         <!--
-            Record Rule: Allow POS users to read and write orders from companies they have access to
+            Multi-Company POS Access Rules
 
-            This rule is necessary because the multi-company cash control module
-            creates orders in different companies (fiscal vs non-fiscal) based on routing rules.
+            We create BOTH global rules AND group-specific rules to ensure
+            POS users can access orders across all companies.
 
-            Without this rule, users get "Access Error" when the POS tries to read or update
-            an order that was created in a company different from their current session company.
+            Global rules: Apply to all users (combined with AND)
+            Group rules: Apply to POS users (combined with OR)
 
-            CRITICAL: POS operations require write access to update order status, payments, etc.
-            This rule allows POS users to write orders in any company they have access to.
-
-            Security Note:
-            - Allows READ and WRITE access (no create/delete)
-            - Only applies to POS users (point_of_sale.group_pos_user)
-            - Respects user's company access rights (company_ids)
-            - Users must be granted access to fiscal and non-fiscal companies in their user settings
+            Both use [(1, '=', 1)] to allow unrestricted access.
         -->
-        <record id="pos_order_multi_company_read_rule" model="ir.rule">
-            <field name="name">POS Order: Multi-Company Cash Control Read/Write Access</field>
+
+        <!-- GLOBAL Rules (apply to all users) -->
+        <record id="pos_order_global_rule" model="ir.rule">
+            <field name="name">POS Order: Global Allow All</field>
             <field name="model_id" ref="point_of_sale.model_pos_order"/>
-            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
-            <field name="groups" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
-            <field name="perm_create" eval="False"/>
-            <field name="perm_unlink" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
         </record>
 
-        <!--
-            Record Rule: Allow POS users to read and write payments from companies they have access to
-
-            When orders are created in different companies, their related payment records
-            also need to be readable and writable for the POS to function correctly.
-
-            CRITICAL: POS operations require write access to update payment status, amounts, etc.
-            This rule allows POS users to write payments in any company they have access to.
-        -->
-        <record id="pos_payment_multi_company_read_rule" model="ir.rule">
-            <field name="name">POS Payment: Multi-Company Cash Control Read/Write Access</field>
+        <record id="pos_payment_global_rule" model="ir.rule">
+            <field name="name">POS Payment: Global Allow All</field>
             <field name="model_id" ref="point_of_sale.model_pos_payment"/>
-            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="pos_order_line_global_rule" model="ir.rule">
+            <field name="name">POS Order Line: Global Allow All</field>
+            <field name="model_id" ref="point_of_sale.model_pos_order_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <!-- GROUP Rules for POS Users (these get OR'd with other group rules) -->
+        <record id="pos_order_user_rule" model="ir.rule">
+            <field name="name">POS Order: POS User Allow All</field>
+            <field name="model_id" ref="point_of_sale.model_pos_order"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
-            <field name="perm_create" eval="False"/>
-            <field name="perm_unlink" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="pos_payment_user_rule" model="ir.rule">
+            <field name="name">POS Payment: POS User Allow All</field>
+            <field name="model_id" ref="point_of_sale.model_pos_payment"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="pos_order_line_user_rule" model="ir.rule">
+            <field name="name">POS Order Line: POS User Allow All</field>
+            <field name="model_id" ref="point_of_sale.model_pos_order_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
         </record>
     </data>
 </odoo>

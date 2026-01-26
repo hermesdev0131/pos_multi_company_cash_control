@@ -7,9 +7,9 @@ import { patch } from "@web/core/utils/patch";
  * Extend PosOrder to handle multi-company cash control fields.
  *
  * This patch adds support for:
- * - company_data: Full company details for receipt display
  * - is_fiscal_order: Boolean indicating fiscal/non-fiscal status
  * - non_fiscal_qr_data: Base64 QR code for non-fiscal receipts
+ * - order_company_data: Company details for receipt display (stored JSON field)
  */
 patch(PosOrder.prototype, {
     /**
@@ -17,9 +17,10 @@ patch(PosOrder.prototype, {
      */
     setup(vals) {
         super.setup(vals);
-        this.company_data = vals.company_data || false;
-        this.is_fiscal_order = vals.is_fiscal_order ?? true;
+        // These fields are stored on the order and loaded from backend
+        this.is_fiscal_order = vals.is_fiscal_order !== undefined ? vals.is_fiscal_order : true;
         this.non_fiscal_qr_data = vals.non_fiscal_qr_data || false;
+        this.order_company_data = vals.order_company_data || false;
     },
 
     /**
@@ -31,10 +32,12 @@ patch(PosOrder.prototype, {
     export_for_printing() {
         const result = super.export_for_printing(...arguments);
 
-        // If we have custom company_data from backend, replace headerData.company
-        // This way the ReceiptHeader component automatically uses our company info
-        if (this.company_data && result.headerData) {
-            result.headerData.company = this.company_data;
+        // Use order_company_data (stored JSON field) for receipt company info
+        if (this.order_company_data && result.headerData) {
+            result.headerData.company = this.order_company_data;
+            console.log('[POS MCC] Using order company:', this.order_company_data.name);
+        } else {
+            console.log('[POS MCC] No order_company_data, using session company');
         }
 
         // Add custom fields for receipt logic (QR code display)
