@@ -1,8 +1,30 @@
-/* CSS for Multi-Company Cash Control inline list view */
+/* CSS for Multi-Company Cash Control section in POS Config */
+
+/* Make the group container full width */
+.o_form_view .o_group[name="multi_company_cash_control"] {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Ensure the inner content also takes full width */
+.o_form_view .o_group[name="multi_company_cash_control"] .o_inner_group {
+    width: 100% !important;
+}
+
 /* Target the specific One2many field for cash company rules */
+.o_field_one2many[name="cash_company_rule_ids"] {
+    width: 100% !important;
+}
+
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_view {
+    overflow-x: auto;
+    width: 100%;
+}
+
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_view .o_list_table {
     table-layout: auto;
     width: 100%;
+    min-width: 900px;
 }
 
 /* Column width adjustments for cash company rules */
@@ -10,70 +32,66 @@
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="sequence"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="sequence"] {
     min-width: 40px;
-    width: 4%;
+    width: 40px;
 }
 
 /* Rule Name column */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="name"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="name"] {
-    min-width: 150px;
-    width: 16%;
+    min-width: 120px;
 }
 
 /* POS Configuration column */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="pos_config_id"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="pos_config_id"] {
-    min-width: 150px;
-    width: 16%;
+    min-width: 140px;
 }
 
 /* Fiscal Company column */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="fiscal_company_id"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="fiscal_company_id"] {
-    min-width: 180px;
-    width: 20%;
+    min-width: 140px;
 }
 
 /* Non-Fiscal Company column */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="non_fiscal_company_id"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="non_fiscal_company_id"] {
-    min-width: 200px;
-    width: 22%;
+    min-width: 160px;
 }
 
 /* Target Non-Fiscal Percentage column */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="target_non_fiscal_percentage"],
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="target_non_fiscal_percentage"] {
-    min-width: 180px;
-    width: 18%;
+    min-width: 200px;
 }
 
-/* Active column */
-.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="active"],
-.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="active"] {
+/* Enabled column (formerly active) */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th[data-name="is_enabled"],
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td[data-name="is_enabled"] {
     min-width: 80px;
-    width: 4%;
+    width: 80px;
 }
 
-/* Adjust header font size and ensure full text is visible */
+/* Adjust header - prevent cropping */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table thead th {
-    font-size: 0.875rem;
-    white-space: normal;
-    word-wrap: break-word;
-    padding: 8px 12px;
-    line-height: 1.4;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    padding: 8px 10px;
+    line-height: 1.3;
 }
 
-/* Adjust data cell font size */
+/* Adjust data cell */
 .o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td {
-    font-size: 0.875rem;
-    padding: 8px 12px;
-    white-space: normal;
-    word-wrap: break-word;
+    font-size: 0.85rem;
+    padding: 8px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
 }
 
-/* Ensure table container allows horizontal scroll if needed */
-.o_field_one2many[name="cash_company_rule_ids"] .o_list_view {
-    overflow-x: auto;
-    min-width: 100%;
+/* Allow cell content to expand on hover */
+.o_field_one2many[name="cash_company_rule_ids"] .o_list_table tbody td:hover {
+    white-space: normal;
+    overflow: visible;
 }

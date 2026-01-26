@@ -42,8 +42,12 @@ class PosCashCompanyRule(models.Model):
         help='Order in which rules are evaluated'
     )
     
-    active = fields.Boolean(
-        string='Active',
+    # NOTE: We use 'is_enabled' instead of 'active' because Odoo's 'active' field
+    # has special "magic" behavior that causes records to be archived/hidden when False.
+    # This caused issues with inline editing in One2many fields where toggling the
+    # field would delete the record instead of just updating it.
+    is_enabled = fields.Boolean(
+        string='Enabled',
         default=True,
         help='Uncheck to disable this rule without deleting it'
     )

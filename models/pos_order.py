@@ -91,13 +91,15 @@ class PosOrder(models.Model):
         """
         Compute whether this order belongs to a fiscal company.
 
-        An order is considered fiscal if its company matches the fiscal_company_id
-        of any active rule for the order's POS config.
+        An order is considered fiscal if:
+        - No active rule exists for the POS config (default to fiscal)
+        - Its company matches the fiscal_company_id of the active rule
 
         CRITICAL: Uses sudo() to avoid access errors when computing across companies.
         """
         for order in self.sudo():
-            order.is_fiscal_order = False
+            # Default to True (fiscal) - orders without rules are fiscal
+            order.is_fiscal_order = True
 
             if not order.config_id:
                 continue
@@ -105,11 +107,13 @@ class PosOrder(models.Model):
             # Find the rule for this POS config
             rule = self.env['pos.cash.company.rule'].sudo().search([
                 ('pos_config_id', '=', order.config_id.id),
-                ('active', '=', True)
+                ('is_enabled', '=', True)
             ], limit=1, order='sequence')
 
-            if rule and rule.fiscal_company_id:
+            if rule and rule.fiscal_company_id and rule.non_fiscal_company_id:
+                # Has active rule - check if order belongs to fiscal or non-fiscal company
                 order.is_fiscal_order = (order.company_id.id == rule.fiscal_company_id.id)
+            # else: keep default True (no rule means fiscal)
 
     def _search_is_fiscal_order(self, operator, value):
         """
@@ -122,7 +126,7 @@ class PosOrder(models.Model):
             raise ValidationError('Operator %s not supported for is_fiscal_order search' % operator)
 
         # Get all active rules
-        rules = self.env['pos.cash.company.rule'].sudo().search([('active', '=', True)])
+        rules = self.env['pos.cash.company.rule'].sudo().search([('is_enabled', '=', True)])
 
         fiscal_company_ids = rules.mapped('fiscal_company_id.id')
 
@@ -169,20 +173,22 @@ class PosOrder(models.Model):
         Generate QR code for non-fiscal orders.
 
         QR code contains: Order reference | Company name | Timestamp
-        Only generated for non-fiscal orders (fiscal orders get False).
+        Only generated for non-fiscal orders (fiscal orders and orders without rules get False).
 
         CRITICAL: Uses sudo() to avoid access errors when computing across companies.
         """
         for order in self.sudo():
-            # Determine if fiscal order directly (don't depend on is_fiscal_order field)
-            is_fiscal = False
+            # Default to True (fiscal) - orders without rules don't get QR codes
+            is_fiscal = True
             if order.config_id:
                 rule = self.env['pos.cash.company.rule'].sudo().search([
                     ('pos_config_id', '=', order.config_id.id),
-                    ('active', '=', True)
+                    ('is_enabled', '=', True)
                 ], limit=1, order='sequence')
-                if rule and rule.fiscal_company_id:
+                if rule and rule.fiscal_company_id and rule.non_fiscal_company_id:
+                    # Has active rule - check if fiscal or non-fiscal
                     is_fiscal = (order.company_id.id == rule.fiscal_company_id.id)
+                # else: keep default True (no rule means fiscal, no QR code)
 
             if is_fiscal:
                 # Fiscal orders don't get QR codes
@@ -290,7 +296,7 @@ class PosOrder(models.Model):
             # Step 3: Find active rule for this POS config
             rule = self.env['pos.cash.company.rule'].sudo().search([
                 ('pos_config_id', '=', pos_config.id),
-                ('active', '=', True)
+                ('is_enabled', '=', True)
             ], limit=1, order='sequence')
 
             if not rule:

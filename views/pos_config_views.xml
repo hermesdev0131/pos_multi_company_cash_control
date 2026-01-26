@@ -9,24 +9,23 @@
             <!-- Add new section - use name field which should definitely exist -->
             <xpath expr="//field[@name='name']" position="after">
                 <group string="Multi-Company Cash Control" name="multi_company_cash_control" class="mt-4 o_group_col_12" col="12">
-                    <field name="cash_company_rule_ids" 
+                    <field name="cash_company_rule_ids"
                            context="{'default_pos_config_id': id}"
                            nolabel="1">
-                            <list decoration-muted="not active" 
+                            <list decoration-muted="not is_enabled"
                                   default_order="sequence"
                                   string="Cash Company Rules"
                                   create="1"
                                   delete="1">
                                 <field name="sequence" widget="handle"/>
                                 <field name="name" string="Rule Name"/>
-                                <field name="pos_config_id" string="POS Configuration"
-                                       options="{'no_create': True, 'no_create_edit': True}"/>
+                                <field name="pos_config_id" column_invisible="1"/>
                                 <field name="fiscal_company_id" string="Fiscal Company"
                                        options="{'no_create': True, 'no_create_edit': True}"/>
                                 <field name="non_fiscal_company_id" string="Non-Fiscal Company"
                                        options="{'no_create': True, 'no_create_edit': True}"/>
-                                <field name="target_non_fiscal_percentage" string="Target Non-Fiscal Percentage (%)"/>
-                                <field name="active" widget="boolean_toggle"/>
+                                <field name="target_non_fiscal_percentage" string="Target %"/>
+                                <field name="is_enabled" widget="boolean_toggle"/>
                             </list>
                             <form>
                                 <sheet>
@@ -40,7 +39,7 @@
                                                    options="{'no_create': True, 'no_create_edit': True}"
                                                    invisible="1"/>
                                             <field name="sequence" widget="handle"/>
-                                            <field name="active"/>
+                                            <field name="is_enabled"/>
                                         </group>
                                         <group string="Company Selection">
                                             <field name="fiscal_company_id" 
