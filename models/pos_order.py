@@ -95,6 +95,35 @@ class PosOrder(models.Model):
             # Search for orders NOT in fiscal companies
             return [('company_id', 'not in', fiscal_company_ids)]
 
+    def _get_order_company_data(self):
+        """
+        Get company data dictionary for the order.
+
+        Returns a dictionary with all company details needed for the receipt.
+        Uses sudo() to access company across multi-company boundaries.
+        """
+        self.ensure_one()
+        company = self.company_id.sudo()
+        return {
+            'id': company.id,
+            'name': company.name or '',
+            'street': company.street or '',
+            'street2': company.street2 or '',
+            'city': company.city or '',
+            'zip': company.zip or '',
+            'state_id': {
+                'id': company.state_id.id,
+                'name': company.state_id.name,
+            } if company.state_id else False,
+            'country_id': {
+                'id': company.country_id.id,
+                'name': company.country_id.name,
+            } if company.country_id else False,
+            'vat': company.vat or '',
+            'phone': company.phone or '',
+            'email': company.email or '',
+        }
+
     @api.depends('company_id', 'config_id', 'name', 'date_order')
     def _compute_non_fiscal_qr_data(self):
         """
@@ -325,6 +354,20 @@ class PosOrder(models.Model):
         except (TypeError, ValueError):
             # If JSON serialization fails, return as-is
             pass
+
+        # Enrich result with company data and custom fields for frontend receipt
+        if result and isinstance(result, list):
+            for order_data in result:
+                if isinstance(order_data, dict) and 'id' in order_data:
+                    order = self.sudo().browse(order_data['id'])
+                    if order.exists():
+                        order_data['company_data'] = order._get_order_company_data()
+                        order_data['is_fiscal_order'] = order.is_fiscal_order
+                        order_data['non_fiscal_qr_data'] = order.non_fiscal_qr_data or False
+                        _logger.debug(
+                            "[POS MCC][RECEIPT] Enriched order %s: is_fiscal=%s, company=%s",
+                            order.name, order.is_fiscal_order, order.company_id.name
+                        )
 
         return result
 
