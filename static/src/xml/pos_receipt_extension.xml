@@ -18,71 +18,40 @@
        t-inherit-mode="extension"
        owl="1">
 
-        <!-- 
-            CRITICAL: Get company object from models using company_id
-            company_id is a Many2one field: [id, name] tuple
-            We need to get the full company record from the models
-        -->
-        <t t-set="order_company_id" t-value="order.company_id and (Array.isArray(order.company_id) ? order.company_id[0] : order.company_id)"/>
-        <t t-set="order_company" t-value="order_company_id ? env.pos.models['res.company'].get(order_company_id) : null"/>
-
         <!-- Override company name in header -->
         <xpath expr="//div[hasclass('pos-receipt-company')]//h2" position="replace">
-            <h2>
-                <t t-if="order_company">
-                    <t t-esc="order_company.name"/>
-                </t>
-                <t t-else="">
-                    <!-- Fallback to session company if order company not loaded -->
-                    <t t-esc="receipt.company.name"/>
-                </t>
-            </h2>
+            <h2><t t-esc="order.company_id.name"/></h2>
         </xpath>
 
         <!-- Override company contact information -->
         <xpath expr="//div[hasclass('pos-receipt-contact')]" position="replace">
             <div class="pos-receipt-contact">
-                <t t-if="order_company">
-                    <!-- Use order's assigned company (fiscal or non-fiscal) -->
-                    <t t-if="order_company.street">
-                        <div><t t-esc="order_company.street"/></div>
-                    </t>
-                    <t t-if="order_company.street2">
-                        <div><t t-esc="order_company.street2"/></div>
-                    </t>
-                    <t t-if="order_company.city or order_company.zip">
-                        <div>
-                            <t t-if="order_company.zip"><t t-esc="order_company.zip"/> </t>
-                            <t t-if="order_company.city"><t t-esc="order_company.city"/></t>
-                        </div>
-                    </t>
-                    <t t-if="order_company.state_id">
-                        <div><t t-esc="order_company.state_id[1]"/></div>
-                    </t>
-                    <t t-if="order_company.country_id">
-                        <div><t t-esc="order_company.country_id[1]"/></div>
-                    </t>
-                    <t t-if="order_company.vat">
-                        <div>VAT: <t t-esc="order_company.vat"/></div>
-                    </t>
-                    <t t-if="order_company.phone">
-                        <div>Tel: <t t-esc="order_company.phone"/></div>
-                    </t>
-                    <t t-if="order_company.email">
-                        <div>Email: <t t-esc="order_company.email"/></div>
-                    </t>
+                <t t-if="order.company_id.street">
+                    <div><t t-esc="order.company_id.street"/></div>
                 </t>
-                <t t-else="">
-                    <!-- Fallback to session company if order company not loaded -->
-                    <t t-if="receipt.company.street">
-                        <div><t t-esc="receipt.company.street"/></div>
-                    </t>
-                    <t t-if="receipt.company.city">
-                        <div><t t-esc="receipt.company.city"/></div>
-                    </t>
-                    <t t-if="receipt.company.vat">
-                        <div>VAT: <t t-esc="receipt.company.vat"/></div>
-                    </t>
+                <t t-if="order.company_id.street2">
+                    <div><t t-esc="order.company_id.street2"/></div>
+                </t>
+                <t t-if="order.company_id.city or order.company_id.zip">
+                    <div>
+                        <t t-if="order.company_id.zip"><t t-esc="order.company_id.zip"/> </t>
+                        <t t-if="order.company_id.city"><t t-esc="order.company_id.city"/></t>
+                    </div>
+                </t>
+                <t t-if="order.company_id.state_id">
+                    <div><t t-esc="order.company_id.state_id.name"/></div>
+                </t>
+                <t t-if="order.company_id.country_id">
+                    <div><t t-esc="order.company_id.country_id.name"/></div>
+                </t>
+                <t t-if="order.company_id.vat">
+                    <div>VAT: <t t-esc="order.company_id.vat"/></div>
+                </t>
+                <t t-if="order.company_id.phone">
+                    <div>Tel: <t t-esc="order.company_id.phone"/></div>
+                </t>
+                <t t-if="order.company_id.email">
+                    <div>Email: <t t-esc="order.company_id.email"/></div>
                 </t>
             </div>
         </xpath>
