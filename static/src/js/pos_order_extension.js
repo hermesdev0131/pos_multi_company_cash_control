@@ -1,34 +1,46 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<templates id="template" xml:space="preserve">
-    <!--
-        POS Multi-Company Cash Control: Receipt Extension
+/** @odoo-module */
 
-        This template extends the standard POS receipt to add QR code for non-fiscal orders.
+import { PosOrder } from "@point_of_sale/app/models/pos_order";
+import { patch } from "@web/core/utils/patch";
 
-        Company info is handled automatically by replacing headerData.company in JavaScript.
+/**
+ * Extend PosOrder to handle multi-company cash control fields.
+ *
+ * This patch adds support for:
+ * - company_data: Full company details for receipt display
+ * - is_fiscal_order: Boolean indicating fiscal/non-fiscal status
+ * - non_fiscal_qr_data: Base64 QR code for non-fiscal receipts
+ */
+patch(PosOrder.prototype, {
+    /**
+     * Override setup to initialize custom fields.
+     */
+    setup(vals) {
+        super.setup(vals);
+        this.company_data = vals.company_data || false;
+        this.is_fiscal_order = vals.is_fiscal_order ?? true;
+        this.non_fiscal_qr_data = vals.non_fiscal_qr_data || false;
+    },
 
-        Business Rules:
-        - Fiscal receipts: No QR code (fiscal printer adds its own)
-        - Non-fiscal receipts: Show custom QR code with transaction info
-    -->
+    /**
+     * Override export_for_printing to include company data and custom fields.
+     *
+     * This method prepares data for the receipt template.
+     * The returned object becomes available as props.data in the template.
+     */
+    export_for_printing() {
+        const result = super.export_for_printing(...arguments);
 
-    <t t-name="pos_multi_company_cash_control.OrderReceipt"
-       t-inherit="point_of_sale.OrderReceipt"
-       t-inherit-mode="extension"
-       owl="1">
+        // If we have custom company_data from backend, replace headerData.company
+        // This way the ReceiptHeader component automatically uses our company info
+        if (this.company_data && result.headerData) {
+            result.headerData.company = this.company_data;
+        }
 
-        <!-- Add QR code section for non-fiscal orders at the end of receipt -->
-        <xpath expr="//div[hasclass('pos-receipt')]" position="inside">
-            <t t-if="!props.data.is_fiscal_order and props.data.non_fiscal_qr_data">
-                <div class="non-fiscal-qr-section" style="text-align: center; margin-top: 20px; padding: 10px 0; border-top: 1px dashed #000;">
-                    <div style="font-size: 12px; margin-bottom: 10px; font-weight: bold;">
-                        Non-Fiscal Transaction
-                    </div>
-                    <img t-att-src="'data:image/png;base64,' + props.data.non_fiscal_qr_data"
-                         style="width: 150px; height: 150px; margin: 0 auto; display: block;"
-                         alt="Non-fiscal QR Code"/>
-                </div>
-            </t>
-        </xpath>
-    </t>
-</templates>
+        // Add custom fields for receipt logic (QR code display)
+        result.is_fiscal_order = this.is_fiscal_order;
+        result.non_fiscal_qr_data = this.non_fiscal_qr_data;
+
+        return result;
+    },
+});

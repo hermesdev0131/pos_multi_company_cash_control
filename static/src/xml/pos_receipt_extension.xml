@@ -3,14 +3,13 @@
     <!--
         POS Multi-Company Cash Control: Receipt Extension
 
-        This template extends the standard POS receipt to:
-        1. Display the order's assigned company information (fiscal or non-fiscal)
-           instead of the session company
-        2. Add a QR code on non-fiscal receipts only
+        This template extends the standard POS receipt to add QR code for non-fiscal orders.
+
+        Company info is handled automatically by replacing headerData.company in JavaScript.
 
         Business Rules:
-        - Fiscal receipts: Show fiscal company info (no QR - fiscal printer adds its own)
-        - Non-fiscal receipts: Show non-fiscal company info + custom QR code
+        - Fiscal receipts: No QR code (fiscal printer adds its own)
+        - Non-fiscal receipts: Show custom QR code with transaction info
     -->
 
     <t t-name="pos_multi_company_cash_control.OrderReceipt"
@@ -18,55 +17,16 @@
        t-inherit-mode="extension"
        owl="1">
 
-        <!-- Override company name in header -->
-        <xpath expr="//div[hasclass('pos-receipt-company')]//h2" position="replace">
-            <h2><t t-esc="order.company_id.name"/></h2>
-        </xpath>
-
-        <!-- Override company contact information -->
-        <xpath expr="//div[hasclass('pos-receipt-contact')]" position="replace">
-            <div class="pos-receipt-contact">
-                <t t-if="order.company_id.street">
-                    <div><t t-esc="order.company_id.street"/></div>
-                </t>
-                <t t-if="order.company_id.street2">
-                    <div><t t-esc="order.company_id.street2"/></div>
-                </t>
-                <t t-if="order.company_id.city or order.company_id.zip">
-                    <div>
-                        <t t-if="order.company_id.zip"><t t-esc="order.company_id.zip"/> </t>
-                        <t t-if="order.company_id.city"><t t-esc="order.company_id.city"/></t>
-                    </div>
-                </t>
-                <t t-if="order.company_id.state_id">
-                    <div><t t-esc="order.company_id.state_id.name"/></div>
-                </t>
-                <t t-if="order.company_id.country_id">
-                    <div><t t-esc="order.company_id.country_id.name"/></div>
-                </t>
-                <t t-if="order.company_id.vat">
-                    <div>VAT: <t t-esc="order.company_id.vat"/></div>
-                </t>
-                <t t-if="order.company_id.phone">
-                    <div>Tel: <t t-esc="order.company_id.phone"/></div>
-                </t>
-                <t t-if="order.company_id.email">
-                    <div>Email: <t t-esc="order.company_id.email"/></div>
-                </t>
-            </div>
-        </xpath>
-
-        <!-- Add QR code section ONLY for non-fiscal orders -->
-        <xpath expr="//div[hasclass('pos-receipt-amount-change')]" position="after">
-            <!-- Check if order is NON-FISCAL -->
-            <t t-if="!order.is_fiscal_order and order.non_fiscal_qr_data">
+        <!-- Add QR code section for non-fiscal orders at the end of receipt -->
+        <xpath expr="//div[hasclass('pos-receipt')]" position="inside">
+            <t t-if="!props.data.is_fiscal_order and props.data.non_fiscal_qr_data">
                 <div class="non-fiscal-qr-section" style="text-align: center; margin-top: 20px; padding: 10px 0; border-top: 1px dashed #000;">
-                    <div class="qr-label" style="font-size: 12px; margin-bottom: 10px; font-weight: bold;">
+                    <div style="font-size: 12px; margin-bottom: 10px; font-weight: bold;">
                         Non-Fiscal Transaction
                     </div>
-                    <!-- QR Code image generated from backend -->
-                    <img t-att-src="'data:image/png;base64,' + order.non_fiscal_qr_data"
-                         style="width: 150px; height: 150px; margin: 0 auto; display: block;"/>
+                    <img t-att-src="'data:image/png;base64,' + props.data.non_fiscal_qr_data"
+                         style="width: 150px; height: 150px; margin: 0 auto; display: block;"
+                         alt="Non-fiscal QR Code"/>
                 </div>
             </t>
         </xpath>

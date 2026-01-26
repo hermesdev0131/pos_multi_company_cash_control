@@ -79,6 +79,7 @@ venv.bak/
 # IDE - VSCode
 .vscode/
 *.code-workspace
+.claude/
 
 # IDE - PyCharm
 .idea/
