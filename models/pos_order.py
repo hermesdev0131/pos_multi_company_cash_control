@@ -334,15 +334,91 @@ class PosOrder(models.Model):
 
         When orders are created with different company_ids than the session,
         we need sudo access to read them back.
+        
+        CRITICAL: Also ensures company_id is included in the loaded fields
+        so the receipt template can access order.company_id.
         """
         _logger.debug("[POS MCC][COMPANY] read_pos_data called for config: %s, type: %s",
                      config_id, data_type)
 
         if data_type == 'pos.order':
             # Use sudo to read orders across all companies
-            return super(PosOrder, self.sudo()).read_pos_data(config_id, data_type)
+            result = super(PosOrder, self.sudo()).read_pos_data(config_id, data_type)
+            
+            # CRITICAL: Ensure company_id is included in the result
+            # The frontend needs company_id to load the correct company data
+            # and for the receipt template to access order.company_id
+            if isinstance(result, dict) and 'data' in result:
+                orders = result['data']
+                if isinstance(orders, list):
+                    for order in orders:
+                        if isinstance(order, dict) and 'id' in order:
+                            # Ensure company_id is present
+                            if 'company_id' not in order:
+                                try:
+                                    order_record = self.sudo().browse(order['id'])
+                                    if order_record.exists() and order_record.company_id:
+                                        # Many2one fields return [id, name] tuple
+                                        order['company_id'] = [
+                                            order_record.company_id.id,
+                                            order_record.company_id.name
+                                        ]
+                                        _logger.debug(
+                                            "[POS MCC][COMPANY] Added company_id to order %s: %s",
+                                            order.get('name', order['id']),
+                                            order['company_id']
+                                        )
+                                except Exception as e:
+                                    _logger.error(
+                                        "[POS MCC][COMPANY] Error adding company_id to order: %s",
+                                        str(e)
+                                    )
+            
+            return result
 
         return super().read_pos_data(config_id, data_type)
+
+    @api.model
+    def _load_pos_data_fields(self, config_id):
+        """
+        Override to ensure company_id is loaded for orders.
+        
+        CRITICAL: This ensures that company_id is included in the fields
+        loaded for pos.order, so the frontend can access order.company_id
+        and the receipt template can display the correct company information.
+        
+        Args:
+            config_id: POS configuration ID
+            
+        Returns:
+            list: List of field names to load
+        """
+        # Get default fields from parent (if method exists)
+        fields = []
+        if hasattr(super(), '_load_pos_data_fields'):
+            try:
+                fields = super()._load_pos_data_fields(config_id)
+            except Exception as e:
+                _logger.warning(
+                    "[POS MCC][COMPANY] Error calling parent _load_pos_data_fields: %s",
+                    str(e)
+                )
+        
+        # Ensure company_id is included
+        if not isinstance(fields, list):
+            fields = []
+        
+        if 'company_id' not in fields:
+            fields.append('company_id')
+            _logger.debug("[POS MCC][COMPANY] Added company_id to _load_pos_data_fields")
+        
+        # Also ensure our computed fields are included
+        if 'is_fiscal_order' not in fields:
+            fields.append('is_fiscal_order')
+        if 'non_fiscal_qr_data' not in fields:
+            fields.append('non_fiscal_qr_data')
+        
+        return fields
 
     def _complete_values_from_session(self, session, values):
         """
