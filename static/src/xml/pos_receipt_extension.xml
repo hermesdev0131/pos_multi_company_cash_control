@@ -18,7 +18,7 @@
        owl="1">
 
         <!-- Add custom styles for receipt adjustments -->
-        <xpath expr="//div[hasclass('pos-receipt')]" position="before">
+        <!-- <xpath expr="//div[hasclass('pos-receipt')]" position="before">
             <style>
                 .pos-receipt .pos-receipt-logo img {
                     max-width: 50px !important;
@@ -27,7 +27,7 @@
                     height: auto !important;
                 }
             </style>
-        </xpath>
+        </xpath> -->
 
         <!-- Add QR code section for non-fiscal orders at the end of receipt -->
         <xpath expr="//div[hasclass('pos-receipt')]" position="inside">
