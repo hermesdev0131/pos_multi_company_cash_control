@@ -571,29 +571,173 @@ class PosOrder(models.Model):
 
     def _prepare_invoice_vals(self):
         """
-        Override to explicitly set company_id for multi-company orders.
+        Override to explicitly set company_id and validate journal/partner compatibility
+        for multi-company orders.
         
-        When orders are routed to fiscal/non-fiscal companies, we need to ensure
-        the invoice and invoice lines have the correct company_id set to avoid
-        currency_id access errors.
+        When orders are routed to fiscal/non-fiscal companies, we need to ensure:
+        1. The invoice has the correct company_id
+        2. The journal exists in the target company
+        3. The partner is compatible with the target company (shared or exists in target company)
+        
+        This prevents "Incompatible companies" errors when creating invoices.
         """
         vals = super()._prepare_invoice_vals()
         
         # Explicitly set company_id to ensure invoice lines inherit it correctly
         # This is critical for multi-company scenarios where orders are routed
         # to different companies than the session
-        if self.company_id:
-            vals['company_id'] = self.company_id.id
-            _logger.debug(
-                "[POS MCC][COMPANY] _prepare_invoice_vals: Setting company_id=%d (%s) for invoice",
-                self.company_id.id,
-                self.company_id.name
-            )
-        else:
+        if not self.company_id:
             _logger.warning(
                 "[POS MCC][COMPANY] _prepare_invoice_vals: Order %s has no company_id!",
                 self.name
             )
+            return vals
+        
+        target_company = self.company_id
+        vals['company_id'] = target_company.id
+        
+        _logger.debug(
+            "[POS MCC][COMPANY] _prepare_invoice_vals: Setting company_id=%d (%s) for invoice",
+            target_company.id,
+            target_company.name
+        )
+        
+        # CRITICAL: Validate and fix journal_id to ensure it's compatible with target company
+        journal_id = vals.get('journal_id')
+        if journal_id:
+            journal = self.env['account.journal'].sudo().browse(journal_id)
+            if journal.exists():
+                # Check if journal is compatible with target company
+                if journal.company_id.id != target_company.id:
+                    _logger.warning(
+                        "[POS MCC][INVOICE] Journal '%s' (id:%d) belongs to company '%s', "
+                        "but order belongs to company '%s'. Searching for compatible journal...",
+                        journal.name,
+                        journal.id,
+                        journal.company_id.name,
+                        target_company.name
+                    )
+                    
+                    # Try to find a journal with the same code in the target company
+                    compatible_journal = self.env['account.journal'].sudo().search([
+                        ('code', '=', journal.code),
+                        ('company_id', '=', target_company.id),
+                        ('type', '=', journal.type),
+                    ], limit=1)
+                    
+                    if compatible_journal:
+                        vals['journal_id'] = compatible_journal.id
+                        _logger.info(
+                            "[POS MCC][INVOICE] Found compatible journal '%s' (id:%d) in target company '%s'",
+                            compatible_journal.name,
+                            compatible_journal.id,
+                            target_company.name
+                        )
+                    else:
+                        # Try to find any sales journal in target company
+                        compatible_journal = self.env['account.journal'].sudo().search([
+                            ('company_id', '=', target_company.id),
+                            ('type', '=', 'sale'),
+                        ], limit=1)
+                        
+                        if compatible_journal:
+                            vals['journal_id'] = compatible_journal.id
+                            _logger.warning(
+                                "[POS MCC][INVOICE] No journal with code '%s' found in target company. "
+                                "Using default sales journal '%s' (id:%d) instead.",
+                                journal.code,
+                                compatible_journal.name,
+                                compatible_journal.id
+                            )
+                        else:
+                            _logger.error(
+                                "[POS MCC][INVOICE] No compatible sales journal found in target company '%s'. "
+                                "Invoice creation may fail!",
+                                target_company.name
+                            )
+        
+        # CRITICAL: Validate and fix partner_id to ensure it's compatible with target company
+        partner_id = vals.get('partner_id')
+        if partner_id:
+            partner = self.env['res.partner'].sudo().browse(partner_id)
+            if partner.exists():
+                # Check if partner is compatible with target company
+                # Partners can be:
+                # 1. Shared (company_id=False or company_ids empty) - accessible across all companies
+                # 2. Company-specific (company_id set or company_ids contains specific companies)
+                
+                is_shared = not partner.company_id and not partner.company_ids
+                is_in_target_company = (
+                    partner.company_id == target_company or
+                    target_company in partner.company_ids
+                )
+                
+                if not is_shared and not is_in_target_company:
+                    _logger.warning(
+                        "[POS MCC][INVOICE] Partner '%s' (id:%d) belongs to company '%s', "
+                        "but order belongs to company '%s'. Searching for compatible partner...",
+                        partner.name,
+                        partner.id,
+                        partner.company_id.name if partner.company_id else 'Unknown',
+                        target_company.name
+                    )
+                    
+                    # For anonymous/final customers, try to find equivalent in target company
+                    if 'Consumidor Final' in partner.name or 'Anónimo' in partner.name or 'Final' in partner.name:
+                        # Look for anonymous customer in target company (shared or company-specific)
+                        anonymous_partner = self.env['res.partner'].sudo().search([
+                            ('name', 'ilike', partner.name),
+                            '|',
+                            ('company_id', '=', False),
+                            ('company_id', '=', target_company.id),
+                        ], limit=1)
+                        
+                        if not anonymous_partner:
+                            # Try broader search
+                            anonymous_partner = self.env['res.partner'].sudo().search([
+                                '|',
+                                ('name', 'ilike', 'Consumidor Final'),
+                                ('name', 'ilike', 'Anónimo'),
+                                '|',
+                                ('company_id', '=', False),
+                                ('company_id', '=', target_company.id),
+                            ], limit=1)
+                        
+                        if anonymous_partner:
+                            vals['partner_id'] = anonymous_partner.id
+                            _logger.info(
+                                "[POS MCC][INVOICE] Using compatible partner '%s' (id:%d) for target company",
+                                anonymous_partner.name,
+                                anonymous_partner.id
+                            )
+                        else:
+                            # Try to use a shared partner or raise error
+                            shared_partner = self.env['res.partner'].sudo().search([
+                                ('company_id', '=', False),
+                                ('is_company', '=', partner.is_company),
+                            ], limit=1)
+                            
+                            if shared_partner:
+                                vals['partner_id'] = shared_partner.id
+                                _logger.warning(
+                                    "[POS MCC][INVOICE] Using shared partner '%s' (id:%d) as fallback",
+                                    shared_partner.name,
+                                    shared_partner.id
+                                )
+                            else:
+                                _logger.error(
+                                    "[POS MCC][INVOICE] No compatible partner found for target company '%s'. "
+                                    "Invoice creation may fail!",
+                                    target_company.name
+                                )
+                else:
+                    # Partner is shared or already in target company - no action needed
+                    _logger.debug(
+                        "[POS MCC][INVOICE] Partner '%s' is compatible with target company (shared=%s, in_company=%s)",
+                        partner.name,
+                        is_shared,
+                        is_in_target_company
+                    )
         
         return vals
 
