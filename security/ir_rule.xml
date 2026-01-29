@@ -44,6 +44,24 @@
             <field name="perm_unlink" eval="True"/>
         </record>
 
+        <!-- Override base Odoo restrictive rule for pos.session -->
+        <!-- This overrides the restrictive rule that limits session access by company -->
+        <record id="point_of_sale.rule_pos_session_multi_company" model="ir.rule">
+            <field name="name">Point Of Sale Session</field>
+            <field name="model_id" ref="point_of_sale.model_pos_session"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+
+        <record id="pos_session_global_rule" model="ir.rule">
+            <field name="name">POS Session: Global Allow All</field>
+            <field name="model_id" ref="point_of_sale.model_pos_session"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
         <!-- GROUP Rules for POS Users (these get OR'd with other group rules) -->
         <record id="pos_order_user_rule" model="ir.rule">
             <field name="name">POS Order: POS User Allow All</field>
@@ -70,6 +88,17 @@
         <record id="pos_order_line_user_rule" model="ir.rule">
             <field name="name">POS Order Line: POS User Allow All</field>
             <field name="model_id" ref="point_of_sale.model_pos_order_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+
+        <record id="pos_session_user_rule" model="ir.rule">
+            <field name="name">POS Session: POS User Allow All</field>
+            <field name="model_id" ref="point_of_sale.model_pos_session"/>
             <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[(4, ref('point_of_sale.group_pos_user'))]"/>
             <field name="perm_read" eval="True"/>

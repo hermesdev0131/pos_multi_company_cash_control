@@ -7,7 +7,8 @@ from io import BytesIO
 from datetime import datetime
 from pytz import UTC, timezone
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError, UserError
+from odoo import _
 
 _logger = logging.getLogger(__name__)
 
@@ -506,15 +507,145 @@ class PosOrder(models.Model):
         Override to use sudo() for multi-company orders.
 
         This method is called when generating an invoice for the order.
+        When the order belongs to a different company than the session, the base
+        invoice generation code accesses order.session_id, which can fail due to
+        record rules preventing cross-company access.
+        
+        With the record rules for pos.session added in ir_rule.xml, sudo() should
+        be sufficient to access both the order (in order company) and the session
+        (in session company).
         """
         try:
-            if self.sudo().company_id.id != self.env.company.id:
-                _logger.debug("[POS MCC][COMPANY] action_pos_order_invoice using sudo for company %s", self.sudo().company_id.name)
+            # Check if order is in a different company than current context
+            order_company_id = self.sudo().company_id.id
+            current_company_id = self.env.company.id
+            
+            if order_company_id != current_company_id:
+                _logger.info(
+                    "[POS MCC][COMPANY] action_pos_order_invoice: Order company %s != current company %s, "
+                    "using sudo to allow cross-company access",
+                    order_company_id, current_company_id
+                )
+                # Use sudo to bypass access rights - record rules allow cross-company access
                 return super(PosOrder, self.sudo()).action_pos_order_invoice()
         except Exception as e:
-            _logger.debug("[POS MCC][COMPANY] action_pos_order_invoice using sudo due to error: %s", str(e))
+            _logger.warning(
+                "[POS MCC][COMPANY] action_pos_order_invoice using sudo due to error: %s",
+                str(e)
+            )
+            # On error, use sudo to ensure access
             return super(PosOrder, self.sudo()).action_pos_order_invoice()
+        
         return super().action_pos_order_invoice()
+
+    def _generate_pos_order_invoice(self):
+        """
+        Override to ensure session access works for multi-company orders.
+        
+        The base method accesses order.session_id which can fail when the order
+        is in a different company than the session. We ensure the session is
+        accessible by using sudo() when there's a company mismatch.
+        """
+        # Check if any order's session is in a different company than the order
+        # This happens when orders are routed to fiscal/non-fiscal companies
+        needs_sudo = False
+        for order in self.sudo():
+            order_company_id = order.company_id.id
+            session_company_id = order.session_id.company_id.id if order.session_id else None
+            
+            if session_company_id and order_company_id != session_company_id:
+                needs_sudo = True
+                _logger.info(
+                    "[POS MCC][COMPANY] _generate_pos_order_invoice: Order %s (company %s) has session "
+                    "in different company %s, using sudo",
+                    order.name, order_company_id, session_company_id
+                )
+                break
+        
+        if needs_sudo:
+            # Use sudo to bypass record rules and allow cross-company session access
+            return super(PosOrder, self.sudo())._generate_pos_order_invoice()
+        
+        # If no company mismatch, use normal flow
+        return super()._generate_pos_order_invoice()
+
+    def _prepare_invoice_vals(self):
+        """
+        Override to explicitly set company_id for multi-company orders.
+        
+        When orders are routed to fiscal/non-fiscal companies, we need to ensure
+        the invoice and invoice lines have the correct company_id set to avoid
+        currency_id access errors.
+        """
+        vals = super()._prepare_invoice_vals()
+        
+        # Explicitly set company_id to ensure invoice lines inherit it correctly
+        # This is critical for multi-company scenarios where orders are routed
+        # to different companies than the session
+        if self.company_id:
+            vals['company_id'] = self.company_id.id
+            _logger.debug(
+                "[POS MCC][COMPANY] _prepare_invoice_vals: Setting company_id=%d (%s) for invoice",
+                self.company_id.id,
+                self.company_id.name
+            )
+        else:
+            _logger.warning(
+                "[POS MCC][COMPANY] _prepare_invoice_vals: Order %s has no company_id!",
+                self.name
+            )
+        
+        return vals
+
+    def _create_invoice(self, move_vals):
+        """
+        Override to ensure correct company context when creating invoices for multi-company orders.
+        
+        When orders are routed to fiscal/non-fiscal companies, we need to ensure
+        the invoice is created with the correct company context, especially when
+        using sudo() to bypass access rights. This ensures invoice lines have
+        access to company.currency_id.
+        """
+        self.ensure_one()
+        
+        # Ensure company_id is set in move_vals (in case it wasn't set in _prepare_invoice_vals)
+        if 'company_id' not in move_vals:
+            # Get company_id from order (use sudo to ensure access)
+            order_company_id = self.sudo().company_id.id if self.sudo().company_id else None
+            if order_company_id:
+                move_vals['company_id'] = order_company_id
+                _logger.debug(
+                    "[POS MCC][COMPANY] _create_invoice: Adding company_id=%d to move_vals",
+                    order_company_id
+                )
+            else:
+                _logger.warning(
+                    "[POS MCC][COMPANY] _create_invoice: Order %s has no company_id!",
+                    self.name
+                )
+        
+        # Get company_id from move_vals or order
+        company_id = move_vals.get('company_id') or (self.sudo().company_id.id if self.sudo().company_id else None)
+        
+        # Validate company exists and has currency
+        if company_id:
+            company = self.env['res.company'].sudo().browse(company_id)
+            if not company.exists():
+                raise UserError(_(
+                    "Cannot create invoice for order %s: company with id %d does not exist.",
+                    self.name, company_id
+                ))
+            
+            if not company.currency_id:
+                raise UserError(_(
+                    "Cannot create invoice for order %s: company '%s' does not have a currency configured. "
+                    "Please configure a currency for this company.",
+                    self.name, company.name
+                ))
+        
+        # Call parent method - it will use with_company() which should work correctly
+        # But we ensure company_id is in move_vals so invoice lines inherit it
+        return super()._create_invoice(move_vals)
 
     def _complete_values_from_session(self, session, values):
         """
@@ -575,3 +706,316 @@ class PosOrder(models.Model):
             res['company_id'] = injected_company_id
 
         return res
+
+
+class PosOrderLine(models.Model):
+    """
+    Extension of pos.order.line model to handle income account lookup
+    for multi-company orders.
+
+    When orders are routed to fiscal/non-fiscal companies, products may not
+    have income accounts configured for those companies. This override
+    provides fallback logic to use the session company's income account
+    if the order company doesn't have one configured.
+    """
+    _inherit = 'pos.order.line'
+
+    def _prepare_base_line_for_taxes_computation(self):
+        """
+        Override to handle missing income accounts in multi-company scenarios.
+
+        When an order is routed to a different company (fiscal/non-fiscal),
+        the product might not have an income account configured for that company.
+        This method provides fallback logic:
+        1. Try to get income account from order's company
+        2. If not found, try session company (original company)
+        3. If still not found, use journal default account
+        4. If all fail, raise a more descriptive error
+        """
+        self.ensure_one()
+        commercial_partner = self.order_id.partner_id.commercial_partner_id
+        fiscal_position = self.order_id.fiscal_position_id
+        
+        order_company = self.order_id.company_id
+        
+        # Try order company first (normal flow)
+        line = self.with_company(order_company)
+        account = line.product_id._get_product_accounts()['income']
+        
+        # CRITICAL: Ensure account belongs to order company
+        # Filter by company domain to ensure compatibility
+        if account:
+            account_domain = account._check_company_domain(order_company)
+            account_filtered = account.filtered_domain(account_domain) if account_domain else account
+            if not account_filtered or account_filtered.company_ids and order_company not in account_filtered.company_ids:
+                _logger.warning(
+                    "[POS MCC][ACCOUNT] Account '%s' (id:%d) does not belong to order company '%s' (id:%d). "
+                    "Will try to find equivalent account or use fallback.",
+                    account.name,
+                    account.id,
+                    order_company.name,
+                    order_company.id
+                )
+                account = None  # Reset to try fallbacks
+        
+        # If no account in order company, try session company as fallback
+        # But we'll need to find an equivalent account in order company
+        if not account and self.order_id.session_id:
+            session_company = self.order_id.session_id.company_id
+            if session_company.id != order_company.id:
+                _logger.info(
+                    "[POS MCC][ACCOUNT] Product '%s' (id:%d) has no income account in order company '%s' (id:%d). "
+                    "Trying session company '%s' (id:%d) as fallback.",
+                    line.product_id.name,
+                    line.product_id.id,
+                    order_company.name,
+                    order_company.id,
+                    session_company.name,
+                    session_company.id
+                )
+                line_session = self.with_company(session_company)
+                session_account = line_session.product_id._get_product_accounts()['income']
+                if session_account:
+                    # Try to find equivalent account in order company by name or code
+                    account_search = self.env['account.account'].sudo().search([
+                        ('company_ids', 'in', [order_company.id]),
+                        ('account_type', '=', 'income'),
+                        '|',
+                        ('name', '=', session_account.name),
+                        ('code', '=', session_account.code),
+                    ], limit=1)
+                    
+                    if account_search:
+                        account = account_search
+                        _logger.info(
+                            "[POS MCC][ACCOUNT] Found equivalent account '%s' (id:%d) in order company '%s' "
+                            "matching session company account '%s' (id:%d).",
+                            account.name,
+                            account.id,
+                            order_company.name,
+                            session_account.name,
+                            session_account.id
+                        )
+                    else:
+                        _logger.warning(
+                            "[POS MCC][ACCOUNT] No equivalent account found in order company '%s' for "
+                            "session company account '%s' (id:%d). Will use journal default.",
+                            order_company.name,
+                            session_account.name,
+                            session_account.id
+                        )
+        
+        # Fallback to journal default account (should be in order company)
+        if not account:
+            journal_account = self.order_id.config_id.journal_id.default_account_id
+            if journal_account:
+                # Verify journal account belongs to order company
+                journal_account_domain = journal_account._check_company_domain(order_company)
+                journal_account_filtered = journal_account.filtered_domain(journal_account_domain) if journal_account_domain else journal_account
+                if journal_account_filtered and (not journal_account_filtered.company_ids or order_company in journal_account_filtered.company_ids):
+                    account = journal_account_filtered
+                    _logger.info(
+                        "[POS MCC][ACCOUNT] Using journal default account '%s' (id:%d) for product '%s'.",
+                        account.name,
+                        account.id,
+                        line.product_id.name
+                    )
+                else:
+                    _logger.warning(
+                        "[POS MCC][ACCOUNT] Journal default account '%s' (id:%d) does not belong to order company '%s'. "
+                        "Cannot use as fallback.",
+                        journal_account.name,
+                        journal_account.id,
+                        order_company.name
+                    )
+        
+        # Final fallback: Try to find ANY income account in order company
+        if not account:
+            _logger.info(
+                "[POS MCC][ACCOUNT] No account found through normal methods. "
+                "Searching for any income account in order company '%s' (id:%d).",
+                order_company.name,
+                order_company.id
+            )
+            # Search in order company context to ensure we find accounts
+            fallback_account = self.env['account.account'].sudo().with_company(order_company).search([
+                ('company_ids', 'in', [order_company.id]),
+                ('account_type', '=', 'income'),
+                ('deprecated', '=', False),
+            ], limit=1, order='code')
+            
+            # If still not found, try without company_ids filter (in case of shared accounts)
+            if not fallback_account:
+                _logger.debug(
+                    "[POS MCC][ACCOUNT] No income account found with company_ids filter. "
+                    "Trying broader search in order company context."
+                )
+                fallback_account = self.env['account.account'].sudo().with_company(order_company).search([
+                    ('account_type', '=', 'income'),
+                    ('deprecated', '=', False),
+                ], limit=1, order='code')
+                # Verify it's accessible in order company
+                if fallback_account:
+                    account_domain = fallback_account._check_company_domain(order_company)
+                    if account_domain:
+                        fallback_account = fallback_account.filtered_domain(account_domain)
+                        if not fallback_account:
+                            fallback_account = self.env['account.account']  # Reset if not compatible
+            
+            if fallback_account:
+                account = fallback_account
+                _logger.warning(
+                    "[POS MCC][ACCOUNT] Using fallback income account '%s' (id:%d, code:%s) from order company '%s' "
+                    "for product '%s'. This account may not be the correct one - please configure the product's "
+                    "income account properly.",
+                    account.name,
+                    account.id,
+                    account.code or 'N/A',
+                    order_company.name,
+                    line.product_id.name
+                )
+        
+        # If no account found after all fallbacks, use None
+        # The account_id is not strictly required for tax computation - it's only used for accounting grouping
+        # The invoice line creation will automatically set account_id via _compute_account_id() 
+        # which uses: product income account -> partner account -> journal default account
+        if not account:
+            _logger.info(
+                "[POS MCC][ACCOUNT] No income account found for product '%s' (id:%d) in order company '%s' (id:%d). "
+                "Proceeding without account_id - invoice line creation will set it automatically via _compute_account_id().",
+                line.product_id.name,
+                line.product_id.id,
+                order_company.name,
+                order_company.id
+            )
+            # Set account to None - tax computation doesn't strictly require it
+            # Invoice line will get account via _compute_account_id() automatically
+            account = None
+
+        # CRITICAL: Final check - ensure account is compatible with order company (if account exists)
+        # This prevents "Incompatible companies" error
+        if account:
+            account_domain = account._check_company_domain(order_company)
+            account_filtered = account.filtered_domain(account_domain) if account_domain else account
+            if not account_filtered or (account_filtered.company_ids and order_company not in account_filtered.company_ids):
+                # Account is not compatible - set to None and let invoice line handle it
+                _logger.warning(
+                    "[POS MCC][ACCOUNT] Account '%s' (id:%d) is not compatible with order company '%s'. "
+                    "Setting to None - invoice line will set account automatically.",
+                    account.name,
+                    account.id,
+                    order_company.name
+                )
+                account = None
+            else:
+                account = account_filtered
+
+            # Apply fiscal position mapping if account exists
+            if account and fiscal_position:
+                account = fiscal_position.map_account(account)
+        else:
+            # No account - fiscal position mapping not needed
+            # Invoice line creation will handle account assignment via _compute_account_id()
+            pass
+
+        # CRITICAL: Filter taxes by order's company to avoid "Incompatible companies" error
+        # When orders are routed to fiscal/non-fiscal companies, taxes from session company
+        # may not be compatible with the order company
+        order_company = self.order_id.company_id
+        tax_ids = line.tax_ids_after_fiscal_position
+        
+        # Filter taxes to only include those compatible with order's company
+        if tax_ids:
+            # Use _filter_taxes_by_company which handles company hierarchy
+            tax_ids_filtered = tax_ids._filter_taxes_by_company(order_company)
+            
+            # If no taxes found in order company, try to get taxes from product in order company context
+            if not tax_ids_filtered:
+                _logger.info(
+                    "[POS MCC][TAX] No compatible taxes found in order company '%s' (id:%d) for product '%s' (id:%d). "
+                    "Original taxes: %s. Trying to get taxes from product in order company context.",
+                    order_company.name,
+                    order_company.id,
+                    line.product_id.name,
+                    line.product_id.id,
+                    [t.name for t in tax_ids]
+                )
+                
+                # Get product taxes in order company context
+                product_in_order_company = line.product_id.with_company(order_company)
+                product_taxes = product_in_order_company.taxes_id.filtered_domain(
+                    self.env['account.tax']._check_company_domain(order_company)
+                )
+                
+                # Apply fiscal position if exists
+                if product_taxes and fiscal_position:
+                    product_taxes = fiscal_position.map_tax(product_taxes)
+                
+                if product_taxes:
+                    tax_ids_filtered = product_taxes._filter_taxes_by_company(order_company)
+                    _logger.info(
+                        "[POS MCC][TAX] Using taxes from product in order company: %s",
+                        [t.name for t in tax_ids_filtered]
+                    )
+            
+            # If still no taxes, try session company as fallback (with proper company context)
+            if not tax_ids_filtered and self.order_id.session_id:
+                session_company = self.order_id.session_id.company_id
+                if session_company.id != order_company.id:
+                    _logger.info(
+                        "[POS MCC][TAX] No taxes found in order company. Trying session company '%s' (id:%d) as fallback.",
+                        session_company.name,
+                        session_company.id
+                    )
+                    # Use original taxes but ensure they're accessible in session company context
+                    tax_ids_filtered = tax_ids._filter_taxes_by_company(session_company)
+                    if tax_ids_filtered:
+                        _logger.info(
+                            "[POS MCC][TAX] Using taxes from session company: %s (Note: These will be used with order company context)",
+                            [t.name for t in tax_ids_filtered]
+                        )
+            
+            tax_ids = tax_ids_filtered if tax_ids_filtered else tax_ids
+            
+            # Final check: ensure all taxes are compatible with order company
+            # This prevents the "Incompatible companies" error
+            if tax_ids:
+                incompatible_taxes = tax_ids.filtered(
+                    lambda t: t.company_id and t.company_id.id != order_company.id
+                )
+                if incompatible_taxes:
+                    _logger.warning(
+                        "[POS MCC][TAX] Removing incompatible taxes: %s (belong to different company than order)",
+                        [t.name for t in incompatible_taxes]
+                    )
+                    tax_ids = tax_ids - incompatible_taxes
+
+        is_refund_order = line.order_id.amount_total < 0.0
+        is_refund_line = line.qty * line.price_unit < 0
+
+        product_name = line.product_id \
+            .with_context(lang=line.order_id.partner_id.lang or self.env.user.lang) \
+            .get_product_multiline_description_sale()
+
+        # Convert None account to empty recordset for tax computation
+        # account_id is optional - invoice line will set it automatically via _compute_account_id()
+        account_for_tax = account if account else self.env['account.account']
+        
+        return {
+            **self.env['account.tax']._prepare_base_line_for_taxes_computation(
+                line,
+                partner_id=commercial_partner,
+                currency_id=self.order_id.currency_id,
+                rate=self.order_id.currency_rate,
+                product_id=line.product_id,
+                tax_ids=tax_ids,  # Use filtered taxes
+                price_unit=line.price_unit,
+                quantity=line.qty * (-1 if is_refund_order else 1),
+                discount=line.discount,
+                account_id=account_for_tax,
+                is_refund=is_refund_line,
+                sign=1 if is_refund_order else -1,
+            ),
+            'uom_id': line.product_uom_id,
+            'name': product_name,
+        }
