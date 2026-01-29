@@ -581,6 +581,12 @@ class PosOrder(models.Model):
         
         This prevents "Incompatible companies" errors when creating invoices.
         """
+        _logger.info(
+            "[POS MCC][INVOICE] _prepare_invoice_vals called for order %s (company_id=%s)",
+            self.name,
+            self.company_id.name if self.company_id else 'None'
+        )
+        
         vals = super()._prepare_invoice_vals()
         
         # Explicitly set company_id to ensure invoice lines inherit it correctly
@@ -596,10 +602,13 @@ class PosOrder(models.Model):
         target_company = self.company_id
         vals['company_id'] = target_company.id
         
-        _logger.debug(
-            "[POS MCC][COMPANY] _prepare_invoice_vals: Setting company_id=%d (%s) for invoice",
+        _logger.info(
+            "[POS MCC][COMPANY] _prepare_invoice_vals: Setting company_id=%d (%s) for invoice. "
+            "Original vals: journal_id=%s, partner_id=%s",
             target_company.id,
-            target_company.name
+            target_company.name,
+            vals.get('journal_id'),
+            vals.get('partner_id')
         )
         
         # CRITICAL: Validate and fix journal_id to ensure it's compatible with target company
@@ -743,12 +752,11 @@ class PosOrder(models.Model):
 
     def _create_invoice(self, move_vals):
         """
-        Override to ensure correct company context when creating invoices for multi-company orders.
+        Override to ensure correct company context and validate journal/partner compatibility
+        when creating invoices for multi-company orders.
         
-        When orders are routed to fiscal/non-fiscal companies, we need to ensure
-        the invoice is created with the correct company context, especially when
-        using sudo() to bypass access rights. This ensures invoice lines have
-        access to company.currency_id.
+        CRITICAL: This method validates and fixes journal/partner compatibility BEFORE
+        calling the parent method, ensuring no "Incompatible companies" errors occur.
         """
         self.ensure_one()
         
@@ -771,25 +779,185 @@ class PosOrder(models.Model):
         # Get company_id from move_vals or order
         company_id = move_vals.get('company_id') or (self.sudo().company_id.id if self.sudo().company_id else None)
         
-        # Validate company exists and has currency
-        if company_id:
-            company = self.env['res.company'].sudo().browse(company_id)
-            if not company.exists():
-                raise UserError(_(
-                    "Cannot create invoice for order %s: company with id %d does not exist.",
-                    self.name, company_id
-                ))
-            
-            if not company.currency_id:
-                raise UserError(_(
-                    "Cannot create invoice for order %s: company '%s' does not have a currency configured. "
-                    "Please configure a currency for this company.",
-                    self.name, company.name
-                ))
+        if not company_id:
+            _logger.error(
+                "[POS MCC][COMPANY] _create_invoice: Cannot create invoice for order %s - no company_id!",
+                self.name
+            )
+            return super()._create_invoice(move_vals)
         
-        # Call parent method - it will use with_company() which should work correctly
-        # But we ensure company_id is in move_vals so invoice lines inherit it
-        return super()._create_invoice(move_vals)
+        # Validate company exists and has currency
+        company = self.env['res.company'].sudo().browse(company_id)
+        if not company.exists():
+            raise UserError(_(
+                "Cannot create invoice for order %s: company with id %d does not exist.",
+                self.name, company_id
+            ))
+        
+        if not company.currency_id:
+            raise UserError(_(
+                "Cannot create invoice for order %s: company '%s' does not have a currency configured. "
+                "Please configure a currency for this company.",
+                self.name, company.name
+            ))
+        
+        # CRITICAL: Validate and fix journal_id BEFORE creating invoice
+        # This prevents "Incompatible companies" errors
+        journal_id = move_vals.get('journal_id')
+        if journal_id:
+            journal = self.env['account.journal'].sudo().browse(journal_id)
+            if journal.exists() and journal.company_id.id != company_id:
+                _logger.warning(
+                    "[POS MCC][INVOICE] _create_invoice: Journal '%s' (id:%d) belongs to company '%s', "
+                    "but invoice belongs to company '%s'. Fixing...",
+                    journal.name,
+                    journal.id,
+                    journal.company_id.name,
+                    company.name
+                )
+                
+                # Search for compatible journal in target company
+                compatible_journal = self.env['account.journal'].sudo().with_company(company_id).search([
+                    ('code', '=', journal.code),
+                    ('company_id', '=', company_id),
+                    ('type', '=', journal.type),
+                ], limit=1)
+                
+                if not compatible_journal:
+                    # Try any sales journal
+                    compatible_journal = self.env['account.journal'].sudo().with_company(company_id).search([
+                        ('company_id', '=', company_id),
+                        ('type', '=', 'sale'),
+                    ], limit=1)
+                
+                if compatible_journal:
+                    move_vals['journal_id'] = compatible_journal.id
+                    _logger.info(
+                        "[POS MCC][INVOICE] _create_invoice: Fixed journal to '%s' (id:%d)",
+                        compatible_journal.name,
+                        compatible_journal.id
+                    )
+                else:
+                    _logger.error(
+                        "[POS MCC][INVOICE] _create_invoice: No compatible journal found in company '%s'. "
+                        "Invoice creation may fail!",
+                        company.name
+                    )
+        
+        # CRITICAL: Validate and fix partner_id BEFORE creating invoice
+        partner_id = move_vals.get('partner_id')
+        if partner_id:
+            partner = self.env['res.partner'].sudo().browse(partner_id)
+            if partner.exists():
+                # Check if partner is compatible
+                is_shared = not partner.company_id and not partner.company_ids
+                is_in_target_company = (
+                    partner.company_id.id == company_id or
+                    company_id in partner.company_ids.ids
+                )
+                
+                if not is_shared and not is_in_target_company:
+                    _logger.warning(
+                        "[POS MCC][INVOICE] _create_invoice: Partner '%s' (id:%d) belongs to company '%s', "
+                        "but invoice belongs to company '%s'. Fixing...",
+                        partner.name,
+                        partner.id,
+                        partner.company_id.name if partner.company_id else 'Unknown',
+                        company.name
+                    )
+                    
+                    # Search for compatible partner
+                    compatible_partner = None
+                    
+                    # First, try exact name match in target company or shared
+                    if 'Consumidor Final' in partner.name or 'Anónimo' in partner.name or 'Final' in partner.name:
+                        # Search for anonymous customer with exact or similar name
+                        compatible_partner = self.env['res.partner'].sudo().search([
+                            ('name', '=', partner.name),  # Exact match first
+                            '|',
+                            ('company_id', '=', False),
+                            ('company_id', '=', company_id),
+                        ], limit=1)
+                        
+                        if not compatible_partner:
+                            # Try case-insensitive match
+                            compatible_partner = self.env['res.partner'].sudo().search([
+                                ('name', 'ilike', partner.name),
+                                '|',
+                                ('company_id', '=', False),
+                                ('company_id', '=', company_id),
+                            ], limit=1)
+                        
+                        if not compatible_partner:
+                            # Try broader search for anonymous customers
+                            compatible_partner = self.env['res.partner'].sudo().search([
+                                '|',
+                                ('name', 'ilike', 'Consumidor Final'),
+                                ('name', 'ilike', 'Anónimo'),
+                                '|',
+                                ('company_id', '=', False),
+                                ('company_id', '=', company_id),
+                            ], limit=1)
+                    
+                    # If still not found, try any shared partner
+                    if not compatible_partner:
+                        compatible_partner = self.env['res.partner'].sudo().search([
+                            ('company_id', '=', False),
+                        ], limit=1)
+                    
+                    if compatible_partner:
+                        move_vals['partner_id'] = compatible_partner.id
+                        # CRITICAL: Also fix related partner fields to prevent "Incompatible companies" errors
+                        commercial_partner = compatible_partner.commercial_partner_id or compatible_partner
+                        move_vals['commercial_partner_id'] = commercial_partner.id
+                        move_vals['partner_shipping_id'] = compatible_partner.id
+                        _logger.info(
+                            "[POS MCC][INVOICE] _create_invoice: Fixed partner to '%s' (id:%d), "
+                            "commercial_partner_id=%d, partner_shipping_id=%d",
+                            compatible_partner.name,
+                            compatible_partner.id,
+                            commercial_partner.id,
+                            compatible_partner.id
+                        )
+                    else:
+                        _logger.error(
+                            "[POS MCC][INVOICE] _create_invoice: No compatible partner found in company '%s'. "
+                            "Invoice creation may fail!",
+                            company.name
+                        )
+                        # Try to remove partner_id to let Odoo handle it (might cause issues though)
+                        # move_vals.pop('partner_id', None)
+                        # move_vals.pop('commercial_partner_id', None)
+                        # move_vals.pop('partner_shipping_id', None)
+        
+        # Log final move_vals before calling parent
+        _logger.info(
+            "[POS MCC][INVOICE] _create_invoice: Final move_vals - company_id=%s, journal_id=%s, "
+            "partner_id=%s, commercial_partner_id=%s, partner_shipping_id=%s",
+            move_vals.get('company_id'),
+            move_vals.get('journal_id'),
+            move_vals.get('partner_id'),
+            move_vals.get('commercial_partner_id'),
+            move_vals.get('partner_shipping_id')
+        )
+        
+        # Call parent method with corrected move_vals
+        # Use with_company() to ensure correct company context
+        try:
+            result = super().with_company(company_id)._create_invoice(move_vals)
+            _logger.info(
+                "[POS MCC][INVOICE] _create_invoice: Successfully created invoice %s",
+                result.name if result else 'Unknown'
+            )
+            return result
+        except Exception as e:
+            _logger.error(
+                "[POS MCC][INVOICE] _create_invoice: Error creating invoice: %s. "
+                "move_vals: %s",
+                str(e),
+                move_vals
+            )
+            raise
 
     def _complete_values_from_session(self, session, values):
         """
