@@ -540,11 +540,15 @@ class PosOrder(models.Model):
 
     def _generate_pos_order_invoice(self):
         """
-        Override to ensure session access works for multi-company orders.
+        Override to ensure session access works for multi-company orders and
+        that invoice payments get the correct company_id.
         
         The base method accesses order.session_id which can fail when the order
         is in a different company than the session. We ensure the session is
         accessible by using sudo() when there's a company mismatch.
+        
+        CRITICAL: After invoice creation, we ensure all payment records created
+        for the invoice have the correct company_id to prevent "Incompatible companies" errors.
         """
         # Check if any order's session is in a different company than the order
         # This happens when orders are routed to fiscal/non-fiscal companies
@@ -564,10 +568,95 @@ class PosOrder(models.Model):
         
         if needs_sudo:
             # Use sudo to bypass record rules and allow cross-company session access
-            return super(PosOrder, self.sudo())._generate_pos_order_invoice()
+            result = super(PosOrder, self.sudo())._generate_pos_order_invoice()
+        else:
+            # If no company mismatch, use normal flow
+            result = super()._generate_pos_order_invoice()
         
-        # If no company mismatch, use normal flow
-        return super()._generate_pos_order_invoice()
+        # CRITICAL: Ensure all invoice payments have the correct company_id
+        # After invoice creation, payments might have company_id=False
+        # We need to fix them to match the invoice's company_id
+        for order in self.sudo():
+            if order.account_move:
+                invoice = order.account_move
+                invoice_company_id = invoice.company_id.id if invoice.company_id else None
+                
+                if invoice_company_id:
+                    # Find payments linked to this invoice through multiple methods:
+                    # 1. Payments with ref matching invoice name
+                    # 2. Payments linked through pos.payment records
+                    # 3. Payments in invoice's payment_ids (if available)
+                    
+                    # Method 1: Search by ref
+                    payments_by_ref = self.env['account.payment'].sudo().search([
+                        ('ref', 'ilike', invoice.name),
+                        '|',
+                        ('company_id', '=', False),
+                        ('company_id', '!=', invoice_company_id),
+                    ])
+                    
+                    # Method 2: Search through pos.payment records
+                    pos_payments = order.payment_ids
+                    payment_ids_from_pos = []
+                    for pos_payment in pos_payments:
+                        # Find account.payment records linked to this pos.payment
+                        account_payments = self.env['account.payment'].sudo().search([
+                            ('pos_payment_id', '=', pos_payment.id),
+                            '|',
+                            ('company_id', '=', False),
+                            ('company_id', '!=', invoice_company_id),
+                        ])
+                        payment_ids_from_pos.extend(account_payments.ids)
+                    
+                    # Combine all payments
+                    all_payment_ids = list(set(payments_by_ref.ids + payment_ids_from_pos))
+                    payments = self.env['account.payment'].sudo().browse(all_payment_ids)
+                    
+                    if payments:
+                        _logger.info(
+                            "[POS MCC][PAYMENT] Fixing company_id for %d payment(s) linked to invoice %s (order %s)",
+                            len(payments),
+                            invoice.name,
+                            order.name
+                        )
+                        
+                        # Update payments to have correct company_id
+                        payments.write({'company_id': invoice_company_id})
+                        
+                        # Also ensure journal is compatible
+                        for payment in payments:
+                            if payment.journal_id and payment.journal_id.company_id.id != invoice_company_id:
+                                # Find compatible journal in invoice company
+                                compatible_journal = self.env['account.journal'].sudo().search([
+                                    ('code', '=', payment.journal_id.code),
+                                    ('company_id', '=', invoice_company_id),
+                                    ('type', '=', payment.journal_id.type),
+                                ], limit=1)
+                                
+                                if not compatible_journal:
+                                    # Try any journal of same type
+                                    compatible_journal = self.env['account.journal'].sudo().search([
+                                        ('company_id', '=', invoice_company_id),
+                                        ('type', '=', payment.journal_id.type),
+                                    ], limit=1)
+                                
+                                if compatible_journal:
+                                    payment.write({'journal_id': compatible_journal.id})
+                                    _logger.info(
+                                        "[POS MCC][PAYMENT] Fixed journal for payment %s: %s -> %s",
+                                        payment.name or payment.id,
+                                        payment.journal_id.name if payment.journal_id else 'None',
+                                        compatible_journal.name
+                                    )
+                                else:
+                                    _logger.warning(
+                                        "[POS MCC][PAYMENT] No compatible journal found for payment %s in company %s. "
+                                        "Payment may fail validation!",
+                                        payment.name or payment.id,
+                                        invoice.company_id.name
+                                    )
+        
+        return result
 
     def _prepare_invoice_vals(self):
         """
