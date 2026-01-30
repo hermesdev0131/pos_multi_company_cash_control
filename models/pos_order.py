@@ -927,33 +927,44 @@ class PosOrder(models.Model):
                         # move_vals.pop('commercial_partner_id', None)
                         # move_vals.pop('partner_shipping_id', None)
         
-        # Log final move_vals before calling parent
-        _logger.info(
-            "[POS MCC][INVOICE] _create_invoice: Final move_vals - company_id=%s, journal_id=%s, "
-            "partner_id=%s, commercial_partner_id=%s, partner_shipping_id=%s",
-            move_vals.get('company_id'),
-            move_vals.get('journal_id'),
-            move_vals.get('partner_id'),
-            move_vals.get('commercial_partner_id'),
-            move_vals.get('partner_shipping_id')
-        )
-        
-        # Call parent method with corrected move_vals
-        # Use with_company() to ensure correct company context
+        # Log final move_vals before calling parent (simplified to avoid recursion in logging)
         try:
-            result = super().with_company(company_id)._create_invoice(move_vals)
             _logger.info(
-                "[POS MCC][INVOICE] _create_invoice: Successfully created invoice %s",
-                result.name if result else 'Unknown'
+                "[POS MCC][INVOICE] _create_invoice: Final move_vals - company_id=%s, journal_id=%s, partner_id=%s",
+                move_vals.get('company_id'),
+                move_vals.get('journal_id'),
+                move_vals.get('partner_id')
             )
+        except Exception:
+            # If logging fails, continue anyway
+            pass
+        
+        # CRITICAL: Call parent method directly to avoid infinite recursion
+        # We call super(PosOrder, self) to get the parent class method directly
+        # The parent method will use the company_id from move_vals
+        # We do NOT use with_company() here as it would create a new recordset with our override
+        try:
+            # Call parent method directly - this bypasses our override
+            result = super(PosOrder, self)._create_invoice(move_vals)
+            
+            try:
+                _logger.info(
+                    "[POS MCC][INVOICE] _create_invoice: Successfully created invoice %s",
+                    result.name if result else 'Unknown'
+                )
+            except Exception:
+                pass
+            
             return result
         except Exception as e:
-            _logger.error(
-                "[POS MCC][INVOICE] _create_invoice: Error creating invoice: %s. "
-                "move_vals: %s",
-                str(e),
-                move_vals
-            )
+            # Simplified error logging to avoid recursion issues
+            try:
+                _logger.error(
+                    "[POS MCC][INVOICE] _create_invoice: Error creating invoice: %s",
+                    str(e)
+                )
+            except Exception:
+                pass
             raise
 
     def _complete_values_from_session(self, session, values):
