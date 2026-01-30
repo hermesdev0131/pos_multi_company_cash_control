@@ -672,14 +672,11 @@ class PosOrder(models.Model):
             if partner.exists():
                 # Check if partner is compatible with target company
                 # Partners can be:
-                # 1. Shared (company_id=False or company_ids empty) - accessible across all companies
-                # 2. Company-specific (company_id set or company_ids contains specific companies)
+                # 1. Shared (company_id=False) - accessible across all companies
+                # 2. Company-specific (company_id set to a specific company)
                 
-                is_shared = not partner.company_id and not partner.company_ids
-                is_in_target_company = (
-                    partner.company_id == target_company or
-                    target_company in partner.company_ids
-                )
+                is_shared = not partner.company_id
+                is_in_target_company = (partner.company_id == target_company)
                 
                 if not is_shared and not is_in_target_company:
                     _logger.warning(
@@ -850,11 +847,11 @@ class PosOrder(models.Model):
             partner = self.env['res.partner'].sudo().browse(partner_id)
             if partner.exists():
                 # Check if partner is compatible
-                is_shared = not partner.company_id and not partner.company_ids
-                is_in_target_company = (
-                    partner.company_id.id == company_id or
-                    company_id in partner.company_ids.ids
-                )
+                # Partners can be:
+                # 1. Shared (company_id=False) - accessible across all companies
+                # 2. Company-specific (company_id set to a specific company)
+                is_shared = not partner.company_id
+                is_in_target_company = (partner.company_id.id == company_id)
                 
                 if not is_shared and not is_in_target_company:
                     _logger.warning(
