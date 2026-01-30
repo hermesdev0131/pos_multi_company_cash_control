@@ -7,7 +7,7 @@ from io import BytesIO
 from datetime import datetime
 from pytz import UTC, timezone
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -539,15 +539,78 @@ class PosOrder(models.Model):
 
     def _generate_pos_order_invoice(self):
         """
-        Override to use sudo for cross-company session access.
+        Override to use session company for all invoice operations.
 
-        Orders are in fiscal/non-fiscal companies but sessions are in the POS company.
-        sudo() is needed to access session records across company boundaries.
-        Invoice creation itself uses session company (handled by _prepare_invoice_vals
-        and _create_invoice), so no payment fixing is needed.
+        The base method uses order.company_id in several places:
+        - _post() with_company(order.company_id)
+        - _apply_invoice_payments() with_company(self.company_id)
+        Since fiscal/non-fiscal companies have no accounting setup,
+        we must use the session company for all of these.
         """
-        # Use sudo to allow cross-company access between order and session
-        return super(PosOrder, self.sudo())._generate_pos_order_invoice()
+        moves = self.env['account.move']
+
+        for order in self.sudo():
+            if order.account_move:
+                moves += order.account_move
+                continue
+
+            if not order.partner_id:
+                raise UserError('Please provide a partner for the sale.')
+
+            session_company = order.session_id.company_id
+
+            move_vals = order._prepare_invoice_vals()
+            new_move = order._create_invoice(move_vals)
+
+            order.state = 'invoiced'
+            # FIXED: Use session company instead of order.company_id
+            new_move.sudo().with_company(session_company).with_context(
+                **order._get_invoice_post_context())._post()
+
+            moves += new_move
+            payment_moves = order._apply_invoice_payments(
+                order.session_id.state == 'closed')
+
+            if self.env.context.get('generate_pdf', True):
+                new_move.with_context(skip_invoice_sync=True)._generate_and_send()
+
+            if order.session_id.state == 'closed':
+                order._create_misc_reversal_move(payment_moves)
+
+        if not moves:
+            return {}
+
+        return {
+            'name': 'Customer Invoice',
+            'view_mode': 'form',
+            'view_id': self.env.ref('account.view_move_form').id,
+            'res_model': 'account.move',
+            'context': "{'move_type':'out_invoice'}",
+            'type': 'ir.actions.act_window',
+            'target': 'current',
+            'res_id': moves and moves.ids[0] or False,
+        }
+
+    def _apply_invoice_payments(self, is_reverse=False):
+        """
+        Override to use session company for payment move creation and reconciliation.
+
+        The base method uses self.company_id (order company) for:
+        - Resolving partner receivable account
+        - Creating payment moves
+        - Reconciling invoice lines
+        Since fiscal/non-fiscal companies have no accounting setup,
+        we use the session company instead.
+        """
+        session_company = self.session_id.company_id
+
+        _logger.info(
+            "[POS MCC][PAYMENT] _apply_invoice_payments: Order %s using session company %s",
+            self.name, session_company.name,
+        )
+
+        # Call parent with session company context
+        return super(PosOrder, self.with_company(session_company))._apply_invoice_payments(is_reverse)
 
     def _prepare_invoice_vals(self):
         """
