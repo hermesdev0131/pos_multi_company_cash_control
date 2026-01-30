@@ -595,22 +595,52 @@ class PosOrder(models.Model):
         """
         Override to use session company for payment move creation and reconciliation.
 
-        The base method uses self.company_id (order company) for:
+        The base method uses self.company_id (stored field = order company) for:
         - Resolving partner receivable account
-        - Creating payment moves
+        - Creating payment moves via pos.payment._create_payment_moves()
         - Reconciling invoice lines
         Since fiscal/non-fiscal companies have no accounting setup,
-        we use the session company instead.
+        we replicate the base logic using session_company instead of self.company_id.
         """
         session_company = self.session_id.company_id
 
         _logger.info(
-            "[POS MCC][PAYMENT] _apply_invoice_payments: Order %s using session company %s",
-            self.name, session_company.name,
+            "[POS MCC][PAYMENT] _apply_invoice_payments: Order %s "
+            "(order company=%s) using session company=%s",
+            self.name,
+            self.company_id.name if self.company_id else 'None',
+            session_company.name,
         )
 
-        # Call parent with session company context
-        return super(PosOrder, self.with_company(session_company))._apply_invoice_payments(is_reverse)
+        # Base logic replicated with session_company instead of self.company_id
+        receivable_account = self.env["res.partner"]._find_accounting_partner(
+            self.partner_id
+        ).with_company(session_company).property_account_receivable_id
+
+        payment_moves = self.payment_ids.sudo().with_company(
+            session_company
+        )._create_payment_moves(is_reverse)
+
+        if receivable_account.reconcile:
+            invoice_receivables = self.account_move.line_ids.filtered(
+                lambda line: line.account_id == receivable_account
+                and not line.reconciled
+            )
+            if invoice_receivables:
+                credit_line_ids = payment_moves._context.get('credit_line_ids', None)
+                payment_receivables = payment_moves.mapped('line_ids').filtered(
+                    lambda line: (
+                        (credit_line_ids and line.id in credit_line_ids)
+                        or (not credit_line_ids
+                            and line.account_id == receivable_account
+                            and line.partner_id)
+                    )
+                )
+                (invoice_receivables | payment_receivables).sudo().with_company(
+                    session_company
+                ).reconcile()
+
+        return payment_moves
 
     def _prepare_invoice_vals(self):
         """
