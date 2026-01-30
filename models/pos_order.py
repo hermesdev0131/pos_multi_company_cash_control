@@ -748,11 +748,32 @@ class PosOrder(models.Model):
                                 compatible_journal.id
                             )
                         else:
-                            _logger.error(
-                                "[POS MCC][INVOICE] No compatible sales journal found in target company '%s'. "
-                                "Invoice creation may fail!",
-                                target_company.name
-                            )
+                            # SOLUTION: If order company has no journals, check if it has accounts
+                            # If no accounts, we'll use session company journal (validation will be handled in _create_invoice)
+                            order_company_accounts = self.env['account.account'].sudo().with_company(target_company).search([
+                                ('company_ids', 'in', [target_company.id]),
+                                ('deprecated', '=', False),
+                            ], limit=1)
+                            
+                            if not order_company_accounts:
+                                # Order company has no accounts - use session company journal
+                                # The account will be handled in account_move_line._compute_account_id
+                                _logger.warning(
+                                    "[POS MCC][INVOICE] Order company '%s' (id:%d) has no journals and no accounts. "
+                                    "Using session company journal '%s' (id:%d). "
+                                    "Account will be handled via account_move_line override.",
+                                    target_company.name,
+                                    target_company.id,
+                                    journal.name,
+                                    journal.id
+                                )
+                                # Keep the session company journal - validation will be bypassed via account company_ids modification
+                            else:
+                                _logger.error(
+                                    "[POS MCC][INVOICE] No compatible sales journal found in target company '%s'. "
+                                    "Invoice creation may fail!",
+                                    target_company.name
+                                )
         
         # CRITICAL: Validate and fix partner_id to ensure it's compatible with target company
         partner_id = vals.get('partner_id')
@@ -924,11 +945,42 @@ class PosOrder(models.Model):
                         compatible_journal.id
                     )
                 else:
-                    _logger.error(
-                        "[POS MCC][INVOICE] _create_invoice: No compatible journal found in company '%s'. "
-                        "Invoice creation may fail!",
-                        company.name
-                    )
+                    # SOLUTION: If order company has no journals, check if it has accounts
+                    # If no accounts, temporarily change session company journal's company_id
+                    order_company_accounts = self.env['account.account'].sudo().with_company(company_id).search([
+                        ('company_ids', 'in', [company_id]),
+                        ('deprecated', '=', False),
+                    ], limit=1)
+                    
+                    if not order_company_accounts:
+                        # Order company has no accounts - use session company journal with sudo to bypass validation
+                        # The journal will remain in session company, but invoice will be in order company
+                        # Accounts will be handled by account_move_line override (adds order company to account.company_ids)
+                        _logger.warning(
+                            "[POS MCC][INVOICE] Order company '%s' (id:%d) has no journals and no accounts. "
+                            "Using session company journal '%s' (id:%d) with sudo to bypass company validation. "
+                            "Invoice will be created in order company, accounts will be handled via account_move_line override.",
+                            company.name,
+                            company_id,
+                            journal.name,
+                            journal.id
+                        )
+                        
+                        # Use sudo() to bypass company validation when creating invoice
+                        # The invoice company_id is already set to order company in move_vals
+                        # Accounts will be made compatible via account_move_line._compute_account_id override
+                        invoice = super(PosOrder, self.sudo())._create_invoice(move_vals)
+                        
+                        _logger.info(
+                            "[POS MCC][INVOICE] Invoice created successfully using session company journal with sudo bypass."
+                        )
+                        return invoice
+                    else:
+                        _logger.error(
+                            "[POS MCC][INVOICE] _create_invoice: No compatible journal found in company '%s'. "
+                            "Invoice creation may fail!",
+                            company.name
+                        )
         
         # CRITICAL: Validate and fix partner_id BEFORE creating invoice
         partner_id = move_vals.get('partner_id')
